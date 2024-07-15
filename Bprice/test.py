@@ -11,7 +11,6 @@ def clean_data_frame(data_frame):
   #cut out of open hight low close volume
   print(columns)
   return data_frame.rename(str.lower, axis='columns')
-btc_price = clean_data_frame(btc_price)
 
 #@title def get rsi14
 def Get_Rsi(day,price):
