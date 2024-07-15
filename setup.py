@@ -7,5 +7,5 @@ setup(
    author='Man Foo',
    author_email='---',
    packages=['Bprice'],  # same as name
-   install_requires=['pandas','numpy'],
+   install_requires=['test.py'],
 )
