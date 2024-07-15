@@ -2,7 +2,8 @@
 
 # Initialization code
 print("Initializing bprice package")
-
+import numpy as np
+import pandas
 # Convenient imports
 from test import *
 
