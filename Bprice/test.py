@@ -1,5 +1,5 @@
 import numpy as np
-import pandas
+import pandas as pd
 #@title def clean dataframe
 def clean_data_frame(data_frame):
   if not isinstance(data_frame,pd.DataFrame):
