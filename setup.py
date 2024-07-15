@@ -6,6 +6,6 @@ setup(
    description='A useful module',
    author='Man Foo',
    author_email='---',
-   packages=['bprice'],  # same as name
+   packages=['Bprice'],  # same as name
    install_requires=['numpy','pandas'],
 )
