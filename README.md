@@ -2,7 +2,7 @@
 Bprice api to deal with dataframe and add data or cal indicator
 
 
-**nameclean_data_frame(data_frame)**
+**clean_data_frame(data_frame)**
 
 **Get_Rsi(day,price)**
 
