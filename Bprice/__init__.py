@@ -5,7 +5,8 @@ print("Initializing bprice package")
 import numpy as np
 import pandas
 # Convenient imports
-from indicator import *
+# from indicator import *
+import indicator
 
 # Package metadata
 __version__ = '1.0'
