@@ -5,7 +5,7 @@ print("Initializing bprice package")
 import numpy as np
 import pandas
 # Convenient imports
-from price_indicator import *
+from indicator import *
 
 # Package metadata
 __version__ = '1.0'
