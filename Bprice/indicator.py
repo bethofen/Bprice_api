@@ -187,4 +187,70 @@ def get_macd(ema12,ema26):
     macd.append(float(str(round((ema12[i] - ema26[i]), 2))))
   return macd
 
+def Get_AdxandDi(High,Low,Close,GetDi = False,Float2 =False):
+    def To14(idct):
+        # Averageresult = [0 for i in range(13)]
+        Averageresult = []
+        Averageresult.append(sum(idct[0:14]))
+        if Float2:
+            for i in range(len(idct)-1):
+                Averageresult.append(round(Averageresult[i]-(Averageresult[i]/14)+idct[i+13],2))
+        else:
+            for i in range(14,len(idct)):
+                Averageresult.append(Averageresult[i-14]-(Averageresult[i-14]/14)+idct[i])
+        return Averageresult
+    def toAdx(Dx):
+        Adx = [round(sum(Dx[0:14])/14,2)]
+        for i in range(14,len(Dx)):
+            Adx.append(round(((Adx[i-14]*13)+Dx[i])/14,2))
+        return Adx
+
+
+    def ToFloat2():
+        #GET Tr
+        Tr = [round(max(High[i] -Low[i],abs(High[i] -Close[i-1]),abs(Low[i]-Close[i-1])),2) for i in range(1,len(High))]
+        # Get +-dm
+        PlusDM =  [round(max(High[i]-High[i-1],0),2) if High[i]-High[i-1]>Low[i-1]-Low[i] else 0 for i in range(1,len(High))]
+        MinusDM = [round(max(Low[i-1]-Low[i],0),2) if Low[i-1]-Low[i]>High[i]-High[i-1] else 0 for i in range(1,len(Low))]
+        #Get +-dm tr average 14
+        PlusDM14 = To14(PlusDM)
+        MinusDM14 = To14(MinusDM)
+        Tr14 =  To14(Tr)
+        #Get +-di average 14
+        bf = [0 for i in range(14)]
+        PlusDi14  = [round(100*PlusDM14[i]/Tr14[i],2) for i in range(len(PlusDM14))]
+        MinusDi14 = [round(100*MinusDM14[i]/Tr14[i],2) for i in range(len(PlusDM14))]
+        #Get Dx and adx  adx is average14 Dx
+        Dx = [round(100*(abs(PlusDi14[i]-MinusDi14[i])/(PlusDi14[i]+MinusDi14[i])),2) for i in range(len(PlusDi14))]
+        Adx = toAdx(Dx)
+        return Adx,PlusDi14,MinusDi14
+    def NotFloat2():
+
+        #GET Tr
+        Tr = [max(High[i] -Low[i],abs(High[i] -Close[i-1]),abs(Low[i]-Close[i-1])) for i in range(1,len(High))]
+        # Get +-dm
+        PlusDM =  [max(High[i]-High[i-1],0) if High[i]-High[i-1]>Low[i-1]-Low[i] else 0 for i in range(1,len(High))]
+        MinusDM = [max(Low[i-1]-Low[i],0) if Low[i-1]-Low[i]>High[i]-High[i-1] else 0 for i in range(1,len(Low))]
+        #Get +-dm tr average 14
+        PlusDM14  = To14(PlusDM)
+        MinusDM14 = To14(MinusDM)
+        Tr14      = To14(Tr)
+        #Get +-di average 14
+        PlusDi14  = [100*PlusDM14[i]/Tr14[i] for i in range(len(PlusDM14))]
+        MinusDi14 = [100*MinusDM14[i]/Tr14[i] for i in range(len(PlusDM14))]
+        #Get Dx and adx  adx is average14 Dx
+        Dx = [100*(abs(PlusDi14[i]-MinusDi14[i])/(PlusDi14[i]+MinusDi14[i])) for i in range(len(PlusDi14))]
+        Adx = toAdx(Dx)
+        return Adx,PlusDi14,MinusDi14
+
+    if Float2:
+        Adx,PlusDi14,MinusDi14 = ToFloat2()
+    else:
+        Adx,PlusDi14,MinusDi14 = NotFloat2()
+    empbf = [None for i in range(14)]
+    empbfadx = [None for i in range(27)]
+    if GetDi:
+        return empbfadx + Adx,empbf + PlusDi14,empbf + MinusDi14
+    else:
+        return empbfadx + Adx
 
