@@ -254,7 +254,7 @@ def Get_AdxandDi(High,Low,Close,GetDi = False,Float2 =False):
     else:
         return empbfadx + Adx
 def Get_cci(close, high, low, period=20):
-    tp = (numpy.array(high) + numpy.array(low)  + numpy.array(close) ) / 3
+    tp = (np.array(high) + np.array(low)  + np.array(close) ) / 3
     sma = pd.Series(tp).rolling(window=period).mean()
     mad = pd.Series(tp).rolling(window=period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
     cci = (tp - sma) / (0.015 * mad)
