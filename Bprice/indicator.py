@@ -89,12 +89,8 @@ def up_date_dataframe(dataframe,listupdate):
 
 #@title def clear float
 def ClearFloatDF(dataframe,demical):
-  columns = dataframe.columns.tolist()
-  print(columns)
-  for col in columns:
-    dataframe.loc[:,str(col)] = [round(i,demical) for i in dataframe[str(col)].values.tolist()]
+  dataframe = dataframe.applymap(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x)
   return dataframe
-
 
 def Get_ema(Period,price):
     period = Period
