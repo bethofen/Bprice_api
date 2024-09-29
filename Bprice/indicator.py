@@ -75,10 +75,11 @@ def Get_Rsi(day,price):
     return Rsi
 
 #@title def get percen
-def Get_percen(price):
-  ram_price = [0]
-  for i in range(1,len(price)):
-    ram_price.append((price[i-1]-price[i])/price[i-1] * 100)
+def Get_percen(open,close):
+  ram_price = []
+  for i in range(len(open)):
+    #close come before because open 100 close 102 - = 2% up
+    ram_price.append((close[i]-open[i])/open[i] * 100)
   return ram_price
 
 #@title def update dataframe insert
