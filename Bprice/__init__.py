@@ -7,6 +7,6 @@ import pandas
 # Convenient imports
 # from indicator import *
 from Bprice.indicator import *
-
+from Bprice.edit_df import *
 # Package metadata
 __version__ = '1.5'
