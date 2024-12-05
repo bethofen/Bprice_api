@@ -110,13 +110,27 @@ def get_ema(data, period):
 
     return [None] * (period - 1) + ema
 
-def get_macd(data, fast_len, slow_len, sig_len=9):
-    fast_ema = get_ema(data, fast_len)
-    slow_ema = get_ema(data, slow_len)
-    macd = fast_ema - slow_ema
-    signal = get_ema(macd, sig_len)
-    histogram = macd - signal
-    return macd, signal, histogram
+def get_macd(data, short_period=12, long_period=26, signal_period=9):
+    if not isinstance(data, (list, tuple)):
+        data = list(data)
+    short_ema = get_ema(data, short_period)
+    long_ema = get_ema(data, long_period)
+    macd_line = [
+        short - long if short is not None and long is not None else None
+        for short, long in zip(short_ema, long_ema)
+    ]
+    macd_valid = [val for val in macd_line if val is not None]
+    signal_line = get_ema(macd_valid, signal_period)
+    signal_line = [None] * (len(macd_line) - len(signal_line)) + signal_line
+
+    # Calculate the MACD histogram (difference between MACD line and Signal line)
+    macd_histogram = [
+        macd - signal if macd is not None and signal is not None else None
+        for macd, signal in zip(macd_line, signal_line)
+    ]
+
+    return macd_line, signal_line, macd_histogram
+
 
 def Get_sma(Period,price):
     period = Period
