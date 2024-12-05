@@ -94,7 +94,7 @@ def ClearFloatDF(dataframe,decimal):
   dataframe = dataframe.applymap(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x)
   return dataframe
 
-def get_ema(data, period):
+def Get_ema(data, period):
     if not isinstance(data, (list, tuple)):
         data = list(data)
     if len(data) < period:
@@ -110,7 +110,7 @@ def get_ema(data, period):
 
     return [None] * (period - 1) + ema
 
-def get_macd(data, short_period=12, long_period=26, signal_period=9):
+def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     if not isinstance(data, (list, tuple)):
         data = list(data)
     short_ema = get_ema(data, short_period)
