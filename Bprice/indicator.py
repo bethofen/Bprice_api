@@ -94,18 +94,29 @@ def ClearFloatDF(dataframe,decimal):
   dataframe = dataframe.applymap(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x)
   return dataframe
 
-def Get_ema(Period,price):
-    period = Period
-    ema = [0 for i in range(period-1)]
-    ema.append(float("%.2f" % round(sum(price[:period]) / period, 2)))
-    Multi = 2/(period+1)
-    Multi = float(str(round(Multi, 5)))
-    #Xema = (price[5] * Multi) + (ema[4] * (1-Multi))
-    # print(type(price[period]))
-    for i in range(len(price)-period):
-        #print(price[period + i] * Multi) + (ema[(period-1)+i] * (1-Multi))
-        ema.append(float(str(round((price[period + i] * Multi) + (ema[(period-1)+i] * (1-Multi)), 2))))
-    return ema
+def get_ema(data, period):
+    if not isinstance(data, (list, tuple)):
+        data = list(data)
+    if len(data) < period:
+        raise ValueError("Data length must be greater than or equal to the period.")
+    ema = []
+    multiplier = 2 / (period + 1)
+    sma = sum(data[:period]) / period
+    ema.append(sma)
+    # Calculate EMA for the rest of the data
+    for price in data[period:]:
+        ema_value = (price - ema[-1]) * multiplier + ema[-1]
+        ema.append(ema_value)
+
+    return [None] * (period - 1) + ema
+
+def get_macd(data, fast_len, slow_len, sig_len=9):
+    fast_ema = get_ema(data, fast_len)
+    slow_ema = get_ema(data, slow_len)
+    macd = fast_ema - slow_ema
+    signal = get_ema(macd, sig_len)
+    histogram = macd - signal
+    return macd, signal, histogram
 
 def Get_sma(Period,price):
     period = Period
@@ -179,11 +190,7 @@ def Get_VWap2(btc_full_price):
     Vwap.append(float(str(round((SumTpv/SumVolune), 2))))
   return Vwap
 
-def get_macd(ema12,ema26):
-  macd = []
-  for i in range(len(ema26)):
-    macd.append(float(str(round((ema12[i] - ema26[i]), 2))))
-  return macd
+
 
 def Get_AdxandDi(High,Low,Close,GetDi = False,Float2 =False):
     def To14(idct):
