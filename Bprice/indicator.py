@@ -1,19 +1,7 @@
 import numpy as np
 import pandas as pd
 import math
-#@title def clean dataframe
-def clean_data_frame(data_frame):
-  if not isinstance(data_frame,pd.DataFrame):
-    print("True")
-  #cut out of open hight low close volume
-  columns = data_frame.columns.tolist()
-  columns = [i.lower() for i in columns]
-  for i in columns:
-    if i not in ['open', 'high', 'low', 'close', 'volume']:
-      data_frame.drop([i], axis=1)
-  #cut out of open hight low close volume
-  print(columns)
-  return data_frame.rename(str.lower, axis='columns')
+
 
 #@title def get rsi14
 def Get_Rsi(day,price):
@@ -83,16 +71,8 @@ def Get_percen(open,close):
     ram_price.append((close[i]-open[i])/open[i] * 100)
   return ram_price
 
-#@title def update dataframe insert
-def up_date_dataframe(dataframe,listupdate):
-  for i in listupdate:
-    dataframe.insert(len(dataframe.columns.tolist()), i[0], i[1], True)
-  return dataframe
 
-#@title def clear float
-def ClearFloatDF(dataframe,decimal):
-  dataframe = dataframe.applymap(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x)
-  return dataframe
+
 
 def Get_ema(data, period):
     if not isinstance(data, (list, tuple)):
@@ -113,14 +93,14 @@ def Get_ema(data, period):
 def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     if not isinstance(data, (list, tuple)):
         data = list(data)
-    short_ema = get_ema(data, short_period)
-    long_ema = get_ema(data, long_period)
+    short_ema = Get_ema(data, short_period)
+    long_ema = Get_ema(data, long_period)
     macd_line = [
         short - long if short is not None and long is not None else None
         for short, long in zip(short_ema, long_ema)
     ]
     macd_valid = [val for val in macd_line if val is not None]
-    signal_line = get_ema(macd_valid, signal_period)
+    signal_line = Get_ema(macd_valid, signal_period)
     signal_line = [None] * (len(macd_line) - len(signal_line)) + signal_line
 
     # Calculate the MACD histogram (difference between MACD line and Signal line)
@@ -272,9 +252,148 @@ def Get_AdxandDi(High,Low,Close,GetDi = False,Float2 =False):
         return empbfadx + Adx,empbf + PlusDi14,empbf + MinusDi14
     else:
         return empbfadx + Adx
+    
 def Get_cci(close, high, low, period=20):
     tp = (np.array(high) + np.array(low)  + np.array(close) ) / 3
     sma = pd.Series(tp).rolling(window=period).mean()
     mad = pd.Series(tp).rolling(window=period).apply(lambda x: np.mean(np.abs(x - np.mean(x))), raw=True)
     cci = (tp - sma) / (0.015 * mad)
     return cci.values
+
+def Get_atr(data, period):
+    """Calculates the Average True Range (ATR)."""
+    high_low = data['high'] - data['low']
+    high_close = np.abs(data['high'] - data['close'].shift(1))
+    low_close = np.abs(data['low'] - data['close'].shift(1))
+
+    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    atr = true_range.rolling(window=period, min_periods=1).mean()
+    return atr
+
+def Get_UT_Bot_Alerts(data, sen_key=1, atr=10, h=False):
+    """
+    UT Bot Alerts indicator converted from Pine Script to Python.
+
+    Parameters:
+    - data: DataFrame containing OHLC data with 'open', 'high', 'low', 'close' columns.
+    - a: Sensitivity value (Key Value in Pine Script).
+    - c: ATR Period.
+    - h: Use Heikin Ashi candles (bool).
+
+    Returns:
+    - DataFrame with buy and sell signals, and trailing stop.
+    """
+    # Calculate ATR
+    data['ATR'] = Get_atr(data, atr)
+    nLoss = sen_key * data['ATR']
+
+    # Heikin Ashi close or normal close
+    data['src'] = data['close']
+    if h:
+        data['HA_close'] = (data['open'] + data['high'] + data['low'] + data['close']) / 4
+        data['src'] = data['HA_close']
+
+    # Initialize xATRTrailingStop
+    data['xATRTrailingStop'] = 0.0
+    for i in range(1, len(data)):
+        prev_stop = data.loc[i - 1, 'xATRTrailingStop']
+        prev_src = data.loc[i - 1, 'src']
+        curr_src = data.loc[i, 'src']
+
+        if curr_src > prev_stop and prev_src > prev_stop:
+            data.loc[i, 'xATRTrailingStop'] = max(prev_stop, curr_src - nLoss.iloc[i])
+        elif curr_src < prev_stop and prev_src < prev_stop:
+            data.loc[i, 'xATRTrailingStop'] = min(prev_stop, curr_src + nLoss.iloc[i])
+        else:
+            data.loc[i, 'xATRTrailingStop'] = curr_src - nLoss.iloc[i] if curr_src > prev_stop else curr_src + nLoss.iloc[i]
+
+    # Position signal based on crossover
+    data['pos'] = 0
+    for i in range(1, len(data)):
+        prev_stop = data.loc[i - 1, 'xATRTrailingStop']
+        curr_stop = data.loc[i, 'xATRTrailingStop']
+        if data.loc[i - 1, 'src'] < prev_stop and data.loc[i, 'src'] > curr_stop:
+            data.loc[i, 'pos'] = 1
+        elif data.loc[i - 1, 'src'] > prev_stop and data.loc[i, 'src'] < curr_stop:
+            data.loc[i, 'pos'] = -1
+        else:
+            data.loc[i, 'pos'] = data.loc[i - 1, 'pos']
+
+    # Buy/Sell Signal
+    data['EMA'] = Get_ema(data['src'], period=1)
+    data['above'] = (data['EMA'] > data['xATRTrailingStop']).astype(int)
+    data['below'] = (data['EMA'] < data['xATRTrailingStop']).astype(int)
+    data['buy'] = (data['src'] > data['xATRTrailingStop']) & (data['above'].shift(1) < data['above'])
+    data['sell'] = (data['src'] < data['xATRTrailingStop']) & (data['below'].shift(1) < data['below'])
+
+    # Optional color columns to visualize bars
+    # data['barcolor'] = np.where(data['src'] > data['xATRTrailingStop'], 'green',
+    #                             np.where(data['src'] < data['xATRTrailingStop'], 'red', ''))
+
+    data.drop(['xATRTrailingStop', 'pos', 'EMA', 'src'], axis=1, inplace=True)
+
+    return data
+
+# Example Usage:
+# df = pd.read_csv('your_data.csv')
+# df = UT_Bot_Alerts(df, a=1, c=10, h=False)
+# print(df[['close', 'xATRTrailingStop', 'pos', 'buy', 'sell', 'barcolor']].tail())
+
+
+
+def Get_Supertrend(df, atr_period, multiplier):
+
+    high = df['high']
+    low = df['low']
+    close = df['close']
+
+    # calculate ATR
+    price_diffs = [high - low,
+                   high - close.shift(),
+                   close.shift() - low]
+    true_range = pd.concat(price_diffs, axis=1)
+    true_range = true_range.abs().max(axis=1)
+    # default ATR calculation in supertrend indicator
+    atr = true_range.ewm(alpha=1/atr_period,min_periods=atr_period).mean()
+    # df['atr'] = df['tr'].rolling(atr_period).mean()
+
+    # HL2 is simply the average of high and low prices
+    hl2 = (high + low) / 2
+    # upperband and lowerband calculation
+    # notice that final bands are set to be equal to the respective bands
+    final_upperband = upperband = hl2 + (multiplier * atr)
+    final_lowerband = lowerband = hl2 - (multiplier * atr)
+
+    # initialize Supertrend column to True
+    supertrend = [True] * len(df)
+
+    for i in range(1, len(df.index)):
+        curr, prev = i, i-1
+
+        # if current close price crosses above upperband
+        if close[curr] > final_upperband[prev]:
+            supertrend[curr] = True
+        # if current close price crosses below lowerband
+        elif close[curr] < final_lowerband[prev]:
+            supertrend[curr] = False
+        # else, the trend continues
+        else:
+            supertrend[curr] = supertrend[prev]
+
+            # adjustment to the final bands
+            if supertrend[curr] == True and final_lowerband[curr] < final_lowerband[prev]:
+                final_lowerband[curr] = final_lowerband[prev]
+            if supertrend[curr] == False and final_upperband[curr] > final_upperband[prev]:
+                final_upperband[curr] = final_upperband[prev]
+
+        # to remove bands according to the trend direction
+        if supertrend[curr] == True:
+            final_upperband[curr] = np.nan
+        else:
+            final_lowerband[curr] = np.nan
+    df['Supertrend'] = supertrend
+    df['Final Lowerband'] = final_lowerband
+    df['Final Upperband'] = final_upperband
+    return df
+
+# data = Supertrend(data, 10, 3.0)
