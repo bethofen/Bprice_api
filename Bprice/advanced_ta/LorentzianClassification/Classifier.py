@@ -1,15 +1,12 @@
 import pandas as pd
 import numpy as np
 import math
-# from ..Utils import *
+
 from .Types import *
 from . import MLExtensions as ml
 from . import KernelFunctions as kernels
-# from ta.trend import ema_indicator as EMA, sma_indicator as SMA
-from .ta import lo_ema as EMA, lo_sma as SMA
+from ta.trend import ema_indicator as EMA, sma_indicator as SMA
 
-import numpy as np
-import math
 
 def shift(arr, len, fill_value=0.0):
     return np.pad(arr, (len,), mode='constant', constant_values=(fill_value,))[:arr.size]

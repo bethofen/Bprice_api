@@ -1,8 +1,9 @@
 import math
 import numpy as np
 import pandas as pd
-from .ta import lo_rsi as RSI,lo_atr as ATR,lo_cci as CCI,lo_adx as ADX,lo_sma as SMA,lo_ema as EMA
-# from ta.trend import cci as CCI, adx as ADX, ema_indicator as EMA, sma_indicator as SMA
+from ta.momentum import rsi as RSI
+from ta.volatility import average_true_range as ATR
+from ta.trend import cci as CCI, adx as ADX, ema_indicator as EMA, sma_indicator as SMA
 from sklearn.preprocessing import MinMaxScaler
 
 
