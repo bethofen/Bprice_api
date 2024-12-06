@@ -8,5 +8,6 @@ import pandas
 # from indicator import *
 from Bprice.indicator import *
 from Bprice.edit_df import *
+from Bprice.advanced_ta import LorentzianClassification
 # Package metadata
 __version__ = '1.5'
