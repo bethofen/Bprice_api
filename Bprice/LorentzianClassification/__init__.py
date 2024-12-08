@@ -1,1 +1,1 @@
-from .Classifier import LorentzianClassification
+from Classifier import LorentzianClassification
