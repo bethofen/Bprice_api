@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 setup(
    name='Bprice',
-   version='1.5',
+   version='1.7',
    description='package for cal indicator',
    author='beethofen',
    # packages=find_packages(),
