@@ -7,6 +7,6 @@ setup(
    # packages=find_packages(),
    # author_email='---',
    # packages=setuptools.find_packages(),
-   packages=['Bprice'],  # same as name
+   packages=['Bprice','Bprice.LorentzianClassification'],  # same as name
    install_requires=['numpy','pandas'],
 )
