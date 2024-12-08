@@ -6,7 +6,7 @@ setup(
    author='beethofen',
    # packages=find_packages(),
    # author_email='---',
-   packages=setuptools.find_packages(),
+   # packages=setuptools.find_packages(),
    packages=['Bprice'],  # same as name
    install_requires=['numpy','pandas'],
 )
