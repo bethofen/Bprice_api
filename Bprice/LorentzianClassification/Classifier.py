@@ -185,10 +185,10 @@ class LorentzianClassification:
         
         if hasattr(filterSettings, 'kernelFilter'):
             self.useKernelFilter = True
-            print("true")
+            # print("true")
         else:
             self.useKernelFilter = False
-            print("False")
+            # print("False")
             filterSettings.kernelFilter = KernelFilter()
 
         for f in features:
