@@ -118,7 +118,6 @@ def Get_sma(data,period):
 
 
 def Get_bollinger(data,period):
-    period = Period
     bollin = [0 for i in range(period-1)]
     for i in range(len(data)-period+1):
         bollram = float(str(round((sum(data[i:period+i]) /period), 2)))
@@ -131,7 +130,6 @@ def Get_bollinger(data,period):
 
 # Sd standard Deviation
 def Get_boll_upband(data,period,trend,Sd=None,Ma=None):
-    period = Period
     if Sd:
         boll = Sd
     else:
