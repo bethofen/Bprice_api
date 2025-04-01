@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
    name='Bprice',
-   version='1.5',
+   version='2',
    description='package for cal indicator',
    author='beethofen',
    # author_email='---',
