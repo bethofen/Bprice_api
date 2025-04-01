@@ -4,12 +4,12 @@ import math
 
 
 #@title def get rsi14
-def Get_Rsi(day,price):
-    time = day
+def Get_Rsi(data,period):
+    time = period
     #switch price to up or down
     Mainprice = []
-    for i in range(0,len(price)-1):
-        Mainprice.append(price[i+1] - price[i])
+    for i in range(0,len(data)-1):
+        Mainprice.append(data[i+1] - data[i])
     #print(Mainprice)
     #price ot gain or losee
         i = 0
@@ -71,9 +71,6 @@ def Get_percen(open,close):
     ram_price.append((close[i]-open[i])/open[i] * 100)
   return ram_price
 
-
-
-
 def Get_ema(data, period):
     if not isinstance(data, (list, tuple)):
         data = list(data)
@@ -112,21 +109,21 @@ def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     return macd_line, signal_line, macd_histogram
 
 
-def Get_sma(Period,price):
+def Get_sma(data,Period):
     period = Period
     sma = [0 for i in range(period-1)]
-    for i in range(len(price)-period+1):
+    for i in range(len(data)-period+1):
         #print(price[period + i] * Multi) + (ema[(period-1)+i] * (1-Multi))
-        sma.append(float(str(round((sum(price[i:period+i]) /period), 2))))
+        sma.append(float(str(round((sum(data[i:period+i]) /period), 2))))
     return sma
 
 
-def Get_bollinger(Period,price):
+def Get_bollinger(data,Period):
     period = Period
     bollin = [0 for i in range(period-1)]
-    for i in range(len(price)-period+1):
-        bollram = float(str(round((sum(price[i:period+i]) /period), 2)))
-        bollram2 = price[i:period+i]
+    for i in range(len(data)-period+1):
+        bollram = float(str(round((sum(data[i:period+i]) /period), 2)))
+        bollram2 = data[i:period+i]
         bollram2 = [(i-bollram) **2 for i in bollram2]
         bollram3 = sum(bollram2) / (period-1)
         bollin.append(float(str(round(math.sqrt(bollram3), 2))))
@@ -134,22 +131,22 @@ def Get_bollinger(Period,price):
 
 
 # Sd standard Deviation
-def Get_boll_upband(Period,Price,trend,Sd=None,Ma=None):
+def Get_boll_upband(data,Period,trend,Sd=None,Ma=None):
     period = Period
     if Sd:
         boll = Sd
     else:
-        boll = Get_bollinger(period,Price)
+        boll = Get_bollinger(period,data)
     if Ma:
         MA = Ma
     else:
-        MA = Get_sma(Period,Price)
+        MA = Get_sma(Period,data)
     bolltrend = []
     if trend == "UP":
-        for i in range(len(Price)):
+        for i in range(len(data)):
             bolltrend.append(float(str(round(MA[i] + (boll[i] * 2), 2))))
     elif trend == "LOW":
-        for i in range(len(Price)):
+        for i in range(len(data)):
             bolltrend.append(float(str(round(MA[i] - (boll[i] * 2), 2))))
     else:
         print("trend error")

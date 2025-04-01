@@ -7,7 +7,6 @@ from . import MLExtensions as ml
 from . import KernelFunctions as kernels
 from ta.trend import ema_indicator as EMA, sma_indicator as SMA
 
-
 def shift(arr, len, fill_value=0.0):
     return np.pad(arr, (len,), mode='constant', constant_values=(fill_value,))[:arr.size]
 
@@ -185,10 +184,10 @@ class LorentzianClassification:
         
         if hasattr(filterSettings, 'kernelFilter'):
             self.useKernelFilter = True
-            print("true")
+            # print("true")
         else:
             self.useKernelFilter = False
-            print("False")
+            # print("False")
             filterSettings.kernelFilter = KernelFilter()
 
         for f in features:
