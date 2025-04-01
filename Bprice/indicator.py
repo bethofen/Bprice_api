@@ -110,7 +110,6 @@ def Get_macd(data, short_period=12, long_period=26, signal_period=9):
 
 
 def Get_sma(data,period):
-    period = Period
     sma = [0 for i in range(period-1)]
     for i in range(len(data)-period+1):
         #print(price[period + i] * Multi) + (ema[(period-1)+i] * (1-Multi))
