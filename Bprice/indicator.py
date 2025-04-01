@@ -109,7 +109,7 @@ def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     return macd_line, signal_line, macd_histogram
 
 
-def Get_sma(data,Period):
+def Get_sma(data,period):
     period = Period
     sma = [0 for i in range(period-1)]
     for i in range(len(data)-period+1):
@@ -118,7 +118,7 @@ def Get_sma(data,Period):
     return sma
 
 
-def Get_bollinger(data,Period):
+def Get_bollinger(data,period):
     period = Period
     bollin = [0 for i in range(period-1)]
     for i in range(len(data)-period+1):
@@ -131,7 +131,7 @@ def Get_bollinger(data,Period):
 
 
 # Sd standard Deviation
-def Get_boll_upband(data,Period,trend,Sd=None,Ma=None):
+def Get_boll_upband(data,period,trend,Sd=None,Ma=None):
     period = Period
     if Sd:
         boll = Sd
