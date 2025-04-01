@@ -444,14 +444,16 @@ class LorentzianClassification:
 
         # self.df["self.yhat1"] = self.yhat1
         # self.df["self.yhat2"] = self.yhat2
-
+    
         self.df["startLongTrade"] = np.where(startLongTrade, self.df['low'], np.nan)
         self.df["startShortTrade"] = np.where(startShortTrade, self.df['high'], np.nan)
 
         self.df["endLongTrade"] = np.where(endLongTrade, self.df['high'], np.nan)
         self.df["endShortTrade"] = np.where(endShortTrade, self.df['low'], np.nan)
-
-
+        
+        self.df["isDynamicExitValid"] = isDynamicExitValid
+        self.df["endLongTradeDynamic"] = endLongTradeDynamic
+        self.df["endShortTradeDynamic"] = endShortTradeDynamic
     # =============================
     # ==== Dump or Return Data ====
     # =============================

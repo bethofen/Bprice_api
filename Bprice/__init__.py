@@ -11,4 +11,4 @@ from Bprice.edit_df import *
 
 from .LorentzianClassification.Classifier import *
 # Package metadata
-__version__ = '1.6'
+__version__ = '1.7'
