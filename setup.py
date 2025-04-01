@@ -1,12 +1,12 @@
-from setuptools import setup
-
+from setuptools import setup, find_packages
 setup(
    name='Bprice',
    version='2',
    description='package for cal indicator',
    author='beethofen',
+   # packages=find_packages(),
    # author_email='---',
    # packages=setuptools.find_packages(),
-   packages=['Bprice'],  # same as name
+   packages=['Bprice','Bprice.LorentzianClassification'],  # same as name
    install_requires=['numpy','pandas'],
 )

@@ -13,3 +13,4 @@ Bprice api to deal with dataframe and add data or cal indicator
 **ClearFloatDF(dataframe,demical)**
 
 
+![lab1 1 py](https://github.com/user-attachments/assets/dee78ead-0c6e-4155-951f-0fd071459b5d)
