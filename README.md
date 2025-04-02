@@ -20,7 +20,7 @@ This project provides a framework for analyzing Bitcoin price data using various
 "pip install git+https://github.com/bethofen/Bprice_api.git"
 📥 Importing Required Modules
 
-
+</div>
 ### 🧹 Data Cleaning
 
 ```python
@@ -116,5 +116,5 @@ Your Name
 
 
 
-</div>
+
 
