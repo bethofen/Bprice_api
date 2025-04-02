@@ -21,6 +21,5 @@ def up_date_dataframe(dataframe,listupdate):
   return dataframe
 
 #@title def clear float
-def ClearFloatDF(dataframe,decimal):
-  dataframe = dataframe.applymap(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x)
-  return dataframe
+def ClearFloatDF(dataframe, decimal):
+    return dataframe.apply(lambda col: col.map(lambda x: round(x, decimal) if isinstance(x, (int, float)) else x))
