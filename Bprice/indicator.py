@@ -133,11 +133,11 @@ def Get_boll_upband(data,period,trend,Sd=None,Ma=None):
     if Sd:
         boll = Sd
     else:
-        boll = Get_bollinger(period,data)
+        boll = Get_bollinger(data,period)
     if Ma:
         MA = Ma
     else:
-        MA = Get_sma(Period,data)
+        MA = Get_sma(data,period)
     bolltrend = []
     if trend == "UP":
         for i in range(len(data)):
