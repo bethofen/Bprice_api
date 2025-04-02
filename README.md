@@ -29,6 +29,7 @@ ClearFloatDF(dataframe=df, decimal=2)
 <div align="center"> 
 ### 🧠 Applying Lorentzian Classification
 </div>
+
 ```python
 lc = LorentzianClassification(
 df,
@@ -57,6 +58,7 @@ df,
 <div align="center"> 
 ### 📊 Technical Indicators
 </div>
+
 ```python
 # 📈 RSI Calculation
 rsi = Get_Rsi(data=df["close"], period=14)
