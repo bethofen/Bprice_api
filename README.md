@@ -31,7 +31,7 @@ ClearFloatDF(dataframe=df, decimal=2)
 
 ```python
 lc = LorentzianClassification(
-    df,
+df,
     settings=LorentzianClassification.Settings(
         source=df['close'],
         neighborsCount=21,
