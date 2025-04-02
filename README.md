@@ -8,7 +8,7 @@
 
 ## 📌 Overview
 
-This project provides a framework for analyzing Bitcoin price data using various technical indicators and Lorentzian Classification. , and multiple functions are implemented to calculate key trading indicators.
+This project provides a framework for analyzing price data using various technical indicators and Lorentzian Classification. , and multiple functions are implemented to calculate key trading indicators.
 
 ## 🚀 Features
 
