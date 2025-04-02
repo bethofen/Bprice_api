@@ -21,13 +21,13 @@ This project provides a framework for analyzing Bitcoin price data using various
 📥 Importing Required Modules
 
 </div>
-### 🧹 Data Cleaning
+## 🧹 Data Cleaning
 
 ```python
 ClearFloatDF(dataframe=df, decimal=2)
 ```
 <div align="center"> 
-### 🧠 Applying Lorentzian Classification
+## 🧠 Applying Lorentzian Classification
 </div>
 
 ```python
@@ -56,7 +56,7 @@ df,
 )
 ```
 <div align="center"> 
-### 📊 Technical Indicators
+## 📊 Technical Indicators
 </div>
 
 ```python
