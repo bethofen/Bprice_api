@@ -8,7 +8,7 @@
 
 ## 📌 Overview
 
-This project provides a framework for analyzing Bitcoin price data using various technical indicators and Lorentzian Classification. The dataset used is `btc_price.csv`, and multiple functions are implemented to calculate key trading indicators.
+This project provides a framework for analyzing Bitcoin price data using various technical indicators and Lorentzian Classification. , and multiple functions are implemented to calculate key trading indicators.
 
 ## 🚀 Features
 
@@ -18,7 +18,7 @@ This project provides a framework for analyzing Bitcoin price data using various
 
 ## ⚙️ Installation
 "pip install git+https://github.com/bethofen/Bprice_api.git"
-📥 Importing Required Modules
+
 
 </div>
 
