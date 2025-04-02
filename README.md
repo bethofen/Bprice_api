@@ -26,9 +26,9 @@ This project provides a framework for analyzing Bitcoin price data using various
 ```python
 ClearFloatDF(dataframe=df, decimal=2)
 ```
-<div align="center"> 
+
 ## 🧠 Applying Lorentzian Classification
-</div>
+
 
 ```python
 lc = LorentzianClassification(
@@ -55,9 +55,9 @@ df,
     )
 )
 ```
-<div align="center"> 
+
 ## 📊 Technical Indicators
-</div>
+
 
 ```python
 # 📈 RSI Calculation
