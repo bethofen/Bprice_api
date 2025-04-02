@@ -26,9 +26,9 @@ This project provides a framework for analyzing Bitcoin price data using various
 ```python
 ClearFloatDF(dataframe=df, decimal=2)
 ```
-
+<div align="center"> 
 ### 🧠 Applying Lorentzian Classification
-
+</div>
 ```python
 lc = LorentzianClassification(
 df,
@@ -54,9 +54,9 @@ df,
     )
 )
 ```
-
+<div align="center"> 
 ### 📊 Technical Indicators
-
+</div>
 ```python
 # 📈 RSI Calculation
 rsi = Get_Rsi(data=df["close"], period=14)
@@ -95,19 +95,6 @@ adx, DiPlus, DiMinus = Get_AdxandDi(High=df["high"], Low=df["low"], Close=df["cl
 # 📊 Supertrend Calculation
 supertrend = Get_Supertrend(df=df, atr_period=14, multiplier=3)
 ```
-
-
-## 🤝 Contributing
-
-Feel free to contribute by submitting issues or pull requests.
-
-## 📜 License
-
-This project is licensed under the MIT License.
-
-## ✨ Author
-
-Your Name
 
 
 
