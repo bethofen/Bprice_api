@@ -8,9 +8,9 @@ import pandas
 # from indicator import *
 from Bprice.indicator import *
 from Bprice.edit_df import *
-
+from Bprice.atr import *
 from .LorentzianClassification.Classifier import *
 # Package metadata
-__version__ = '2'
+__version__ = '2.2'
 print("Initializing Bprice Package Success")
 print("version", __version__ )

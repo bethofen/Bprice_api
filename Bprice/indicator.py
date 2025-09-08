@@ -4,88 +4,63 @@ import math
 
 
 #@title def get rsi14
-def Get_Rsi(data,period):
-    time = period
-    #switch price to up or down
-    Mainprice = []
-    for i in range(0,len(data)-1):
-        Mainprice.append(data[i+1] - data[i])
-    #print(Mainprice)
-    #price ot gain or losee
-        i = 0
-        gain = []
-        loss = []
-    for i in range(0,len(Mainprice)):
-        if Mainprice[i] > 0:
-            gain.append(np.around(Mainprice[i],2))
-        else:
-            gain.append(0)
-        if Mainprice[i] < 0:
-            loss.append(abs(np.around(Mainprice[i],2)))
-        else:
-            loss.append(0)
-    i = 0
-    xgain = []
-    xloss = []
-    xAvggain = 0.00
-    xAvgloss = 0.00
-    Avggain = []
-    Avgloss = []
-    Rs = []
-    for i in range(0,time-1):
-        xAvggain += gain[i]
-        Avggain.append(np.around(gain[i], 2))
-        xAvgloss += loss[i]
-        Avgloss.append(np.around(loss[i], 2))
-    Avggain13 = xAvggain / (time - 1)
-    Avgloss13 = xAvgloss / (time - 1)
-    i = 0
-    Avggain.append(np.around((((Avggain13 * (time - 1)) + gain[(time - 1)]) / time),2))
-    Avgloss.append(np.around((((Avgloss13 * (time - 1)) + loss[(time - 1)]) / time),2))
-    for i in range(0,len(Mainprice)):
-        if i >= time:
-            Avggain.append(np.around((((Avggain[i-1] * (time - 1)) + gain[i]) / time),2))
-            Avgloss.append(np.around((((Avgloss[i-1] * (time - 1)) + loss[i]) / time),2))
-        if Avgloss[i] != 0:
-            Rs.append(Avggain[i] / Avgloss[i])
-        else:
-            Rs.append(100)
-    i = 0
-    Rsi = []
-    for i in range(0,len(Rs)):
-        if Avgloss[i] == 0:
-            Rsi.append(0)
-        else:
-            Rsi.append(100-(100/(1+Rs[i])))
-
-    #float to .00
-    Rsi = [float(str(round(i, 2))) for i in Rsi]
-    Rsi.insert(0, 0.00)
-    return Rsi
+def Get_Rsi(data, period=14):
+    """Calculate RSI using pandas optimized operations."""
+    import pandas as pd
+    import numpy as np
+    
+    # Convert to pandas Series
+    if not isinstance(data, pd.Series):
+        data = pd.Series(data)
+    
+    # Calculate price changes
+    delta = data.diff()
+    
+    # Separate gains and losses
+    gains = delta.clip(lower=0)
+    losses = -delta.clip(upper=0)
+    
+    # Use exponential weighted mean with alpha = 1/period (Wilder's method)
+    alpha = 1.0 / period
+    avg_gains = gains.ewm(alpha=alpha, adjust=False).mean()
+    avg_losses = losses.ewm(alpha=alpha, adjust=False).mean()
+    
+    # Calculate RSI
+    rs = avg_gains / avg_losses
+    rsi = 100 - (100 / (1 + rs))
+    
+    return rsi.fillna(0).round(2).tolist()
 
 #@title def get percen
-def Get_percen(open,close):
-  ram_price = []
-  for i in range(len(open)):
-    #close come before because open 100 close 102 - = 2% up
-    ram_price.append((close[i]-open[i])/open[i] * 100)
-  return ram_price
+def Get_percen(open_prices, close_prices):
+    """Calculate percentage change using vectorized operations."""
+    import pandas as pd
+    import numpy as np
+    
+    # Convert to numpy arrays for vectorized operations
+    open_arr = np.array(open_prices)
+    close_arr = np.array(close_prices)
+    
+    # Handle division by zero
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result = np.where(open_arr == 0, 0, (close_arr - open_arr) / open_arr * 100)
+    
+    return result.round(2).tolist()
 
 def Get_ema(data, period):
-    if not isinstance(data, (list, tuple)):
-        data = list(data)
-    if len(data) < period:
-        raise ValueError("Data length must be greater than or equal to the period.")
-    ema = []
-    multiplier = 2 / (period + 1)
-    sma = sum(data[:period]) / period
-    ema.append(sma)
-    # Calculate EMA for the rest of the data
-    for price in data[period:]:
-        ema_value = (price - ema[-1]) * multiplier + ema[-1]
-        ema.append(ema_value)
-
-    return [None] * (period - 1) + ema
+    """Fast EMA calculation using pandas."""
+    import pandas as pd
+    
+    if isinstance(data, list):
+        data = pd.Series(data)
+    
+    # Use pandas ewm (exponentially weighted moving average)
+    ema = data.ewm(span=period, adjust=False).mean()
+    
+    # Add None padding for consistency
+    result = [None] * (period - 1) + ema.iloc[period-1:].tolist()
+    
+    return result
 
 def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     if not isinstance(data, (list, tuple)):
@@ -109,12 +84,20 @@ def Get_macd(data, short_period=12, long_period=26, signal_period=9):
     return macd_line, signal_line, macd_histogram
 
 
-def Get_sma(data,period):
-    sma = [0 for i in range(period-1)]
-    for i in range(len(data)-period+1):
-        #print(price[period + i] * Multi) + (ema[(period-1)+i] * (1-Multi))
-        sma.append(float(str(round((sum(data[i:period+i]) /period), 2))))
-    return sma
+def Get_sma(data, period):
+    """Fast SMA calculation using pandas rolling window."""
+    import pandas as pd
+    
+    if isinstance(data, list):
+        data = pd.Series(data)
+    
+    # Calculate rolling mean
+    sma = data.rolling(window=period).mean()
+    
+    # Convert to list with proper formatting
+    result = sma.round(2).tolist()
+    
+    return result
 
 
 def Get_bollinger(data,period):
@@ -255,79 +238,151 @@ def Get_cci(close, high, low, period=20):
     return cci.values
 
 def Get_atr(data, period):
-    """Calculates the Average True Range (ATR)."""
+    """
+    Calculate Average True Range (ATR) - Optimized Version
+    
+    ATR measures market volatility by calculating the average of true ranges
+    over a specified period. True Range is the maximum of:
+    1. High - Low
+    2. |High - Previous Close|
+    3. |Low - Previous Close|
+    
+    Parameters:
+    -----------
+    data : pandas.DataFrame
+        OHLC data with columns: 'high', 'low', 'close'
+    period : int
+        Number of periods for ATR calculation
+        
+    Returns:
+    --------
+    pandas.Series : ATR values
+    """
+    import pandas as pd
+    import numpy as np
+    
+    # Input validation
+    required_cols = ['high', 'low', 'close']
+    if not all(col in data.columns for col in required_cols):
+        raise ValueError(f"Data must contain columns: {required_cols}")
+    
+    if period <= 0:
+        raise ValueError("Period must be positive")
+    
+    if len(data) < period:
+        raise ValueError(f"Data length ({len(data)}) must be >= period ({period})")
+    
+    # Calculate the three True Range components
     high_low = data['high'] - data['low']
-    high_close = np.abs(data['high'] - data['close'].shift(1))
-    low_close = np.abs(data['low'] - data['close'].shift(1))
-
-    true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = true_range.rolling(window=period, min_periods=1).mean()
+    high_prev_close = np.abs(data['high'] - data['close'].shift(1))
+    low_prev_close = np.abs(data['low'] - data['close'].shift(1))
+    
+    # Get True Range (maximum of the three components)
+    # Using np.maximum.reduce is fastest for this operation
+    true_range = np.maximum.reduce([high_low, high_prev_close, low_prev_close])
+    
+    # Calculate ATR using simple moving average
+    atr = pd.Series(true_range, index=data.index).rolling(
+        window=period, 
+        min_periods=1
+    ).mean()
+    
     return atr
 
-def Get_UT_Bot_Alerts(data, sen_key=1, atr=10, h=False):
-    """
-    UT Bot Alerts indicator converted from Pine Script to Python.
 
-    Parameters:
-    - data: DataFrame containing OHLC data with 'open', 'high', 'low', 'close' columns.
-    - a: Sensitivity value (Key Value in Pine Script).
-    - c: ATR Period.
-    - h: Use Heikin Ashi candles (bool).
-
-    Returns:
-    - DataFrame with buy and sell signals, and trailing stop.
-    """
-    # Calculate ATR
-    data['ATR'] = Get_atr(data, atr)
-    nLoss = sen_key * data['ATR']
-
-    # Heikin Ashi close or normal close
-    data['src'] = data['close']
-    if h:
-        data['HA_close'] = (data['open'] + data['high'] + data['low'] + data['close']) / 4
-        data['src'] = data['HA_close']
-
-    # Initialize xATRTrailingStop
-    data['xATRTrailingStop'] = 0.0
-    for i in range(1, len(data)):
-        prev_stop = data.loc[i - 1, 'xATRTrailingStop']
-        prev_src = data.loc[i - 1, 'src']
-        curr_src = data.loc[i, 'src']
-
+def Get_UT_Bot_Alerts(data, key_value=1, atr_period=10, use_heikin_ashi=False):
+    import pandas as pd
+    import numpy as np
+    
+    # Input validation
+    required_columns = ['open', 'high', 'low', 'close']
+    if not all(col in data.columns for col in required_columns):
+        raise ValueError(f"Data must contain columns: {required_columns}")
+    
+    if len(data) < atr_period:
+        raise ValueError(f"Data length must be >= ATR period ({atr_period})")
+    
+    # Create working copy
+    df = data.copy()
+    
+    # Calculate ATR (True Range)
+    high_low = df['high'] - df['low']
+    high_close = np.abs(df['high'] - df['close'].shift(1))
+    low_close = np.abs(df['low'] - df['close'].shift(1))
+    
+    true_range = np.maximum.reduce([high_low, high_close, low_close])
+    atr = pd.Series(true_range).rolling(window=atr_period, min_periods=1).mean()
+    
+    # Calculate nLoss (ATR * Key Value)
+    nLoss = key_value * atr
+    
+    # Determine source price
+    if use_heikin_ashi:
+        # Heikin Ashi Close = (O + H + L + C) / 4
+        src = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+    else:
+        src = df['close']
+    
+    # Initialize trailing stop array
+    trailing_stop = np.zeros(len(df))
+    trailing_stop[0] = src.iloc[0]  # Initialize first value
+    
+    # Calculate UT Bot trailing stop
+    for i in range(1, len(df)):
+        prev_stop = trailing_stop[i-1]
+        prev_src = src.iloc[i-1]
+        curr_src = src.iloc[i]
+        curr_loss = nLoss.iloc[i]
+        
+        # UT Bot Algorithm Logic
         if curr_src > prev_stop and prev_src > prev_stop:
-            data.loc[i, 'xATRTrailingStop'] = max(prev_stop, curr_src - nLoss.iloc[i])
+            # Both current and previous above stop = Uptrend continues
+            # Raise the stop loss (but don't lower it)
+            trailing_stop[i] = max(prev_stop, curr_src - curr_loss)
+            
         elif curr_src < prev_stop and prev_src < prev_stop:
-            data.loc[i, 'xATRTrailingStop'] = min(prev_stop, curr_src + nLoss.iloc[i])
+            # Both current and previous below stop = Downtrend continues  
+            # Lower the stop loss (but don't raise it)
+            trailing_stop[i] = min(prev_stop, curr_src + curr_loss)
+            
         else:
-            data.loc[i, 'xATRTrailingStop'] = curr_src - nLoss.iloc[i] if curr_src > prev_stop else curr_src + nLoss.iloc[i]
-
-    # Position signal based on crossover
-    data['pos'] = 0
-    for i in range(1, len(data)):
-        prev_stop = data.loc[i - 1, 'xATRTrailingStop']
-        curr_stop = data.loc[i, 'xATRTrailingStop']
-        if data.loc[i - 1, 'src'] < prev_stop and data.loc[i, 'src'] > curr_stop:
-            data.loc[i, 'pos'] = 1
-        elif data.loc[i - 1, 'src'] > prev_stop and data.loc[i, 'src'] < curr_stop:
-            data.loc[i, 'pos'] = -1
-        else:
-            data.loc[i, 'pos'] = data.loc[i - 1, 'pos']
-
-    # Buy/Sell Signal
-    data['EMA'] = Get_ema(data['src'], period=1)
-    data['above'] = (data['EMA'] > data['xATRTrailingStop']).astype(int)
-    data['below'] = (data['EMA'] < data['xATRTrailingStop']).astype(int)
-    data['buy'] = (data['src'] > data['xATRTrailingStop']) & (data['above'].shift(1) < data['above'])
-    data['sell'] = (data['src'] < data['xATRTrailingStop']) & (data['below'].shift(1) < data['below'])
-
-    # Optional color columns to visualize bars
-    # data['barcolor'] = np.where(data['src'] > data['xATRTrailingStop'], 'green',
-    #                             np.where(data['src'] < data['xATRTrailingStop'], 'red', ''))
-
-    data.drop(['xATRTrailingStop', 'pos', 'EMA', 'src'], axis=1, inplace=True)
-
-    return data
-
+            # Trend reversal detected
+            if curr_src > prev_stop:
+                # Price broke above stop = New uptrend
+                trailing_stop[i] = curr_src - curr_loss
+            else:
+                # Price broke below stop = New downtrend
+                trailing_stop[i] = curr_src + curr_loss
+    
+    # Add trailing stop to dataframe
+    df['UT_TrailingStop'] = trailing_stop
+    
+    # Determine trend direction
+    df['UT_Direction'] = src > df['UT_TrailingStop']
+    
+    # Generate buy/sell signals (trend change detection)
+    df['UT_Buy'] = (df['UT_Direction'] == True) & (df['UT_Direction'].shift(1) == False)
+    df['UT_Sell'] = (df['UT_Direction'] == False) & (df['UT_Direction'].shift(1) == True)
+    
+    # Create position column for easier backtesting
+    df['UT_Position'] = 0
+    current_position = 0
+    
+    for i in range(len(df)):
+        if df['UT_Buy'].iloc[i]:
+            current_position = 1
+        elif df['UT_Sell'].iloc[i]:
+            current_position = -1
+        df.iloc[i, df.columns.get_loc('UT_Position')] = current_position
+    
+    # Add some additional useful columns
+    df['UT_Distance'] = np.abs(src - df['UT_TrailingStop'])  # Distance from trailing stop
+    df['UT_Distance_Pct'] = (df['UT_Distance'] / src) * 100  # Distance as percentage
+    
+    # Clean up - remove any NaN values
+    df = df.fillna(method='bfill').fillna(method='ffill')
+    
+    return df
 # Example Usage:
 # df = pd.read_csv('your_data.csv')
 # df = UT_Bot_Alerts(df, a=1, c=10, h=False)
@@ -335,59 +390,143 @@ def Get_UT_Bot_Alerts(data, sen_key=1, atr=10, h=False):
 
 
 
-def Get_Supertrend(df, atr_period, multiplier):
-
+def Get_Supertrend(df, atr_period=14, multiplier=3.0):
+    """Calculate Supertrend indicator correctly."""
+    import pandas as pd
+    import numpy as np
+    
+    df = df.copy()
+    
+    # Get price data
     high = df['high']
-    low = df['low']
+    low = df['low'] 
     close = df['close']
-
-    # calculate ATR
-    price_diffs = [high - low,
-                   high - close.shift(),
-                   close.shift() - low]
-    true_range = pd.concat(price_diffs, axis=1)
-    true_range = true_range.abs().max(axis=1)
-    # default ATR calculation in supertrend indicator
-    atr = true_range.ewm(alpha=1/atr_period,min_periods=atr_period).mean()
-    # df['atr'] = df['tr'].rolling(atr_period).mean()
-
-    # HL2 is simply the average of high and low prices
+    
+    # Calculate True Range properly
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = np.abs(high - prev_close)
+    tr3 = np.abs(low - prev_close)
+    
+    true_range = np.maximum.reduce([tr1, tr2, tr3])
+    
+    # Calculate ATR using rolling mean (standard method)
+    atr = pd.Series(true_range).rolling(window=atr_period, min_periods=1).mean()
+    
+    # Calculate HL2 (median price)
     hl2 = (high + low) / 2
-    # upperband and lowerband calculation
-    # notice that final bands are set to be equal to the respective bands
-    final_upperband = upperband = hl2 + (multiplier * atr)
-    final_lowerband = lowerband = hl2 - (multiplier * atr)
-
-    # initialize Supertrend column to True
-    supertrend = [True] * len(df)
-
-    for i in range(1, len(df.index)):
-        curr, prev = i, i-1
-
-        # if current close price crosses above upperband
-        if close[curr] > final_upperband[prev]:
-            supertrend[curr] = True
-        # if current close price crosses below lowerband
-        elif close[curr] < final_lowerband[prev]:
-            supertrend[curr] = False
-        # else, the trend continues
+    
+    # Calculate basic upper and lower bands
+    upper_band = hl2 + (multiplier * atr)
+    lower_band = hl2 - (multiplier * atr)
+    
+    # Initialize final bands
+    final_upper_band = upper_band.copy()
+    final_lower_band = lower_band.copy()
+    
+    # Initialize supertrend
+    supertrend = pd.Series([True] * len(df), index=df.index)
+    
+    # Calculate Supertrend
+    for i in range(1, len(df)):
+        # Current and previous indices
+        curr_idx = df.index[i]
+        prev_idx = df.index[i-1]
+        
+        # Calculate final bands with rules
+        # Upper band: use lower of current and previous if trend is down
+        if (upper_band.iloc[i] < final_upper_band.iloc[i-1]) or (close.iloc[i-1] > final_upper_band.iloc[i-1]):
+            final_upper_band.iloc[i] = upper_band.iloc[i]
         else:
-            supertrend[curr] = supertrend[prev]
-
-            # adjustment to the final bands
-            if supertrend[curr] == True and final_lowerband[curr] < final_lowerband[prev]:
-                final_lowerband[curr] = final_lowerband[prev]
-            if supertrend[curr] == False and final_upperband[curr] > final_upperband[prev]:
-                final_upperband[curr] = final_upperband[prev]
-
-        # to remove bands according to the trend direction
-        if supertrend[curr] == True:
-            final_upperband[curr] = np.nan
+            final_upper_band.iloc[i] = final_upper_band.iloc[i-1]
+            
+        # Lower band: use higher of current and previous if trend is up  
+        if (lower_band.iloc[i] > final_lower_band.iloc[i-1]) or (close.iloc[i-1] < final_lower_band.iloc[i-1]):
+            final_lower_band.iloc[i] = lower_band.iloc[i]
         else:
-            final_lowerband[curr] = np.nan
-    df['Supertrend'] = supertrend
-    df['Final Lowerband'] = final_lowerband
-    df['Final Upperband'] = final_upperband
+            final_lower_band.iloc[i] = final_lower_band.iloc[i-1]
+        
+        # Determine trend direction
+        if close.iloc[i] <= final_lower_band.iloc[i]:
+            supertrend.iloc[i] = False  # Downtrend
+        elif close.iloc[i] >= final_upper_band.iloc[i]:
+            supertrend.iloc[i] = True   # Uptrend
+        else:
+            supertrend.iloc[i] = supertrend.iloc[i-1]  # Continue previous trend
+    
+    # Create Supertrend line
+    supertrend_line = pd.Series(index=df.index, dtype=float)
+    for i in range(len(df)):
+        if supertrend.iloc[i]:
+            supertrend_line.iloc[i] = final_lower_band.iloc[i]
+        else:
+            supertrend_line.iloc[i] = final_upper_band.iloc[i]
+    
+    # Add results to dataframe
+    df['ATR'] = atr
+    df['Supertrend'] = supertrend_line
+    df['Supertrend_Direction'] = supertrend  # True = Uptrend, False = Downtrend
+    df['ST_Upper_Band'] = final_upper_band
+    df['ST_Lower_Band'] = final_lower_band
+    
     return df
 
-# data = Supertrend(data, 10, 3.0)
+
+def Get_avgHLOC(data, list_data):
+    """Calculate average of specified columns for each row."""
+    data = data.copy()
+    data.columns = data.columns.str.lower()
+    
+    # Check if all required columns exist
+    missing_cols = [col for col in list_data if col not in data.columns]
+    if missing_cols:
+        raise ValueError(f"Missing columns: {missing_cols}")
+    
+    # Method 2: Using pandas vectorized operations (เร็วมาก)
+    return data[list_data].mean(axis=1).tolist()
+
+
+def Get_heikin_ashi(df):
+    df = df.copy()
+    
+    # Ensure required columns are present
+    if not {'open', 'high', 'low', 'close'}.issubset(df.columns):
+        raise ValueError("Input DataFrame must contain 'open', 'high', 'low', 'close' columns.")
+    
+    # Initialize result DataFrame
+    result = df.copy()
+    
+    # Calculate Heikin-Ashi Close
+    result['ha_close'] = (df['open'] + df['high'] + df['low'] + df['close']) / 4
+    
+    # Calculate Heikin-Ashi Open
+    result['ha_open'] = 0.0  # Initialize
+    result.iloc[0, result.columns.get_loc('ha_open')] = df.iloc[0]['open']  # First row
+    
+    # Calculate subsequent ha_open values
+    for i in range(1, len(result)):
+        result.iloc[i, result.columns.get_loc('ha_open')] = (
+            result.iloc[i-1]['ha_open'] + result.iloc[i-1]['ha_close']
+        ) / 2
+    
+    # Calculate Heikin-Ashi High and Low
+    result['ha_high'] = result[['high', 'ha_open', 'ha_close']].max(axis=1)
+    result['ha_low'] = result[['low', 'ha_open', 'ha_close']].min(axis=1)
+    
+    # Determine trend
+    result['trend'] = result.apply(
+        lambda row: 'Bullish' if row['ha_close'] > row['ha_open'] else 'Bearish',
+        axis=1
+    )
+    
+    # Return the Heikin-Ashi OHLC data
+    columns_to_return = ['ha_open', 'ha_high', 'ha_low', 'ha_close', 'trend']
+    if 'datetime' in df.columns:
+        columns_to_return.append('datetime')
+    
+    return result[columns_to_return].rename(columns={
+        'ha_open': 'open',
+        'ha_high': 'high',
+        'ha_low': 'low',
+        'ha_close': 'close'
+    })
