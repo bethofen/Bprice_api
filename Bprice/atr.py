@@ -162,3 +162,32 @@ def Get_atr(data, period, method='simple'):
         return cal_atr_vectorized(data, period)
     else:
         raise ValueError("Method must be 'simple', 'wilder', or 'vectorized'")
+    
+
+
+def atr_trailing_stop(df, entry_price, position_type, period=14, multiplier=3, old_stop=None):
+    if entry_price is None:
+        raise ValueError("entry_price must be provided and cannot be None.")
+    if position_type not in ["BUY", "SELL"]:
+        raise ValueError("position_type must be 'BUY' or 'SELL'.")
+    
+    # Calculate ATR
+    atr = Get_atr(df, period)
+    
+    # Use the latest ATR value
+    atr_value = atr.iloc[-1]
+    
+    if position_type == 'BUY':
+        # Calculate new stop-loss for a long position
+        new_stop = entry_price - atr_value * multiplier
+
+        if old_stop is not None:
+            new_stop = max(new_stop, old_stop)
+    
+    elif position_type == 'SELL':
+        # Calculate new stop-loss for a short position
+        new_stop = entry_price + atr_value * multiplier
+        
+        if old_stop is not None:
+            new_stop = min(new_stop, old_stop)
+    return int(new_stop)
