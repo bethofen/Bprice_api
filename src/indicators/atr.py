@@ -1,4 +1,6 @@
-def cal_atr_optimized(data, period):
+import pandas as pd
+import numpy as np
+def calculate_atr_optimized(data:pd.DataFrame, period:int=14)->pd.DataFrame:
     """
     Calculate Average True Range (ATR) - Optimized Version
     
@@ -14,13 +16,7 @@ def cal_atr_optimized(data, period):
         OHLC data with columns: 'high', 'low', 'close'
     period : int
         Number of periods for ATR calculation
-        
-    Returns:
-    --------
-    pandas.Series : ATR values
     """
-    import pandas as pd
-    import numpy as np
     
     # Input validation
     required_cols = ['high', 'low', 'close']
@@ -43,7 +39,7 @@ def cal_atr_optimized(data, period):
     true_range = np.maximum.reduce([high_low, high_prev_close, low_prev_close])
     
     # Calculate ATR using simple moving average
-    atr = pd.Series(true_range, index=data.index).rolling(
+    atr = pd.DataFrame(true_range, index=data.index).rolling(
         window=period, 
         min_periods=1
     ).mean()
@@ -51,7 +47,7 @@ def cal_atr_optimized(data, period):
     return atr
 
 
-def cal_atr_wilder(data, period):
+def calculate_atr_wilder(data:pd.DataFrame, period:int=14)->pd.DataFrame:
     """
     Calculate ATR using Wilder's Smoothing Method (more accurate)
     
@@ -64,14 +60,7 @@ def cal_atr_wilder(data, period):
         OHLC data with columns: 'high', 'low', 'close'
     period : int
         Number of periods for ATR calculation
-        
-    Returns:
-    --------
-    pandas.Series : ATR values using Wilder's method
     """
-    import pandas as pd
-    import numpy as np
-    
     # Input validation
     required_cols = ['high', 'low', 'close']
     if not all(col in data.columns for col in required_cols):
@@ -83,16 +72,16 @@ def cal_atr_wilder(data, period):
     low_prev_close = np.abs(data['low'] - data['close'].shift(1))
     
     true_range = np.maximum.reduce([high_low, high_prev_close, low_prev_close])
-    tr_series = pd.Series(true_range, index=data.index)
+    tr_data = pd.DataFrame(true_range, index=data.index)
     
     # Wilder's smoothing: ATR = ((previous_ATR * (period-1)) + current_TR) / period
     # This is equivalent to EWM with alpha = 1/period
-    atr = tr_series.ewm(alpha=1/period, adjust=False).mean()
+    atr = tr_data.ewm(alpha=1/period, adjust=False).mean()
     
     return atr
 
 
-def cal_atr_vectorized(data, period):
+def calculate_atr_vectorized(data:pd.DataFrame, period:int=14)->pd.DataFrame:
     """
     Ultra-fast vectorized ATR calculation
     
@@ -105,14 +94,7 @@ def cal_atr_vectorized(data, period):
         OHLC data with columns: 'high', 'low', 'close'
     period : int
         Number of periods for ATR calculation
-        
-    Returns:
-    --------
-    pandas.Series : ATR values
     """
-    import pandas as pd
-    import numpy as np
-    
     # Convert to numpy arrays for speed
     high = data['high'].values
     low = data['low'].values
@@ -134,10 +116,10 @@ def cal_atr_vectorized(data, period):
     # Pad with NaN for first (period-1) values
     atr_full = np.concatenate([np.full(period-1, np.nan), atr])
     
-    return pd.Series(atr_full, index=data.index)
+    return pd.DataFrame(atr_full, index=data.index)
 
 
-def Get_atr(data, period, method='simple'):
+def calculate_atr(data:pd.DataFrame, period:int=14, method:str='simple')->pd.DataFrame:
     """
     Comprehensive ATR function with multiple calculation methods
     
@@ -149,45 +131,15 @@ def Get_atr(data, period, method='simple'):
         Number of periods for ATR calculation
     method : str, default='simple'
         Calculation method: 'simple', 'wilder', 'vectorized'
-        
-    Returns:
-    --------
-    pandas.Series : ATR values
     """
     if method == 'simple':
-        return cal_atr_optimized(data, period)
+        return calculate_atr_optimized(data, period)
     elif method == 'wilder':
-        return cal_atr_wilder(data, period)
+        return calculate_atr_wilder(data, period)
     elif method == 'vectorized':
-        return cal_atr_vectorized(data, period)
+        return calculate_atr_vectorized(data, period)
     else:
         raise ValueError("Method must be 'simple', 'wilder', or 'vectorized'")
     
 
-
-def atr_trailing_stop(df, entry_price, position_type, period=14, multiplier=3, old_stop=None):
-    if entry_price is None:
-        raise ValueError("entry_price must be provided and cannot be None.")
-    if position_type not in ["BUY", "SELL"]:
-        raise ValueError("position_type must be 'BUY' or 'SELL'.")
-    
-    # Calculate ATR
-    atr = Get_atr(df, period)
-    
-    # Use the latest ATR value
-    atr_value = atr.iloc[-1]
-    
-    if position_type == 'BUY':
-        # Calculate new stop-loss for a long position
-        new_stop = entry_price - atr_value * multiplier
-
-        if old_stop is not None:
-            new_stop = max(new_stop, old_stop)
-    
-    elif position_type == 'SELL':
-        # Calculate new stop-loss for a short position
-        new_stop = entry_price + atr_value * multiplier
-        
-        if old_stop is not None:
-            new_stop = min(new_stop, old_stop)
-    return int(new_stop)
+ 

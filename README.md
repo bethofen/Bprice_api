@@ -1,7 +1,6 @@
-
 <div align="center"> 
   # Bprice_api
-  <h1> Bprice </h1>
+  <h1> Bprice v3</h1>
   <p>Bprice api to deal with dataframe and add data or cal indicator</p>
 
 # 🎯Price Analysis with Lorentzian Classification and Technical Indicators
@@ -17,16 +16,15 @@ This project provides a framework for analyzing price data using various technic
 ✅ **Data Cleaning**: Provides functionality to format and clean floating-point values.
 
 ## ⚙️ Installation
+
 "pip install git+https://github.com/bethofen/Bprice_api.git"
 
-
 </div>
-
 
 ## 🧹 Data Cleaning
 
 ```python
-ClearFloatDF(dataframe=df, decimal=2)
+round_dataframe(df,2)
 ```
 
 ## 🧠 Applying Lorentzian Classification
@@ -59,52 +57,34 @@ df,
 
 ## 📊 Technical Indicators
 
-
 ```python
 # 📈 RSI Calculation
-rsi = Get_Rsi(data=df["close"], period=14)
+rsi = calculate_rsi(data=df["close"], period=14)
 
 # 📊 Percentage Change
-percent_change = Get_percen(open=df["open"], close=df["close"])
+percent_change = calculate_percent_change(start_prices=df["open"],end_prices=df["close"])
 
 # 📉 EMA Calculation
-ema = Get_ema(data=df["close"], period=14)
+calculate_ema(price_series=df["close"],period=14)
 
 # 📈 MACD Calculation
-macd = Get_macd(df['close'], short_period=12, long_period=26, signal_period=9)
+calculate_macd(df['close'], short_period=12, long_period=26, signal_period=9)
 
 # 📊 SMA Calculation
-sma = Get_sma(data=df["close"], period=14)
+calculate_sma(data = df["close"],period=14)
 
 # 📈 Bollinger Bands
-bollinger = Get_bollinger(data=df['close'], period=20)
-
-# 📊 Bollinger Upper Band
-boll_upband = Get_boll_upband(data=df['close'], period=12, trend="UP")
-
-# 📉 VWAP Calculation
-vwap = Get_VWap(close=df["close"], high=df["high"], low=df["low"], volume=df["volume"])
-vwap2 = Get_VWap2(df)
+calculate_bollinger_bands(price_series=df['close'],period=20)
 
 # 📊 ATR Calculation
-atr = Get_atr(data=df, period=14)
+calculate_atr(data=df, period=14)
 
 # 📉 CCI Calculation
-cci = Get_cci(close=df["close"], high=df["high"], low=df["low"], period=20)
+calculate_cci(close=df["close"],high=df["high"],low=df["low"], period=20)
 
 # 📈 ADX and DI Calculation
-adx, DiPlus, DiMinus = Get_AdxandDi(High=df["high"], Low=df["low"], Close=df["close"], GetDi=True)
+adx = calculate_adx( data=df,period=14)
 
 # 📊 Supertrend Calculation
-supertrend = Get_Supertrend(df=df, atr_period=14, multiplier=3)
+calculate_supertrend(df=df, atr_period=14, multiplier=3)
 ```
-
-
-
-
-
-
-
-
-
-
