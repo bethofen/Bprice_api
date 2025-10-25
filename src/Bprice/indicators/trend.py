@@ -88,7 +88,7 @@ def calculate_ut_bot_alerts(data:pd.DataFrame, key_value:int=1, atr_period:int=1
     df['UT_Distance_Pct'] = (df['UT_Distance'] / src) * 100  # Distance as percentage
     
     # Clean up - remove any NaN values
-    df = df.fillna(method='bfill').fillna(method='ffill')
+    df = df.bfill().ffill()
     
     return df
 # Example Usage:
