@@ -7,6 +7,7 @@ setup(
    # packages=find_packages(),
    # author_email='---',
    # packages=setuptools.find_packages(),
-   packages=['src','src.LorentzianClassification'],  # same as name
+    packages=find_packages(where='src'),
+    package_dir={'': 'src'},
    install_requires=['numpy','pandas'],
 )
