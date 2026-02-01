@@ -110,85 +110,109 @@ def calculate_ut_bot_alerts(
 
 
 def calculate_supertrend(
-    df: pd.DataFrame, atr_period: int = 14, multiplier: float = 3.0
+    df: pd.DataFrame, atr_period: int = 10, multiplier: float = 3.0
 ) -> pd.DataFrame:
-    """Calculate Supertrend indicator correctly."""
+    """Calculate Supertrend indicator correctly using RMA for ATR."""
     df = df.copy()
+
     # Get price data
     high = df["high"]
     low = df["low"]
     close = df["close"]
 
-    # Calculate True Range properly
+    # --- 1. Calculate True Range ---
     prev_close = close.shift(1)
     tr1 = high - low
-    tr2 = np.abs(high - prev_close)
-    tr3 = np.abs(low - prev_close)
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
 
-    true_range = np.maximum.reduce([tr1, tr2, tr3])
+    # ใช้ max ระหว่าง 3 ค่า
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    # Calculate ATR using rolling mean (standard method)
-    atr = pd.Series(true_range).rolling(window=atr_period, min_periods=1).mean()
+    # --- 2. Calculate ATR using RMA (Wilder's Smoothing) ---
+    # จุดที่แก้: ใช้ ewm (Exponential Weighted Functions) เพื่อจำลอง RMA แทน rolling mean
+    # alpha = 1 / period คือสูตรของ Wilder
+    atr = true_range.ewm(
+        alpha=1 / atr_period, min_periods=atr_period, adjust=False
+    ).mean()
 
-    # Calculate HL2 (median price)
+    # --- 3. Calculate Basic Bands ---
     hl2 = (high + low) / 2
-
-    # Calculate basic upper and lower bands
     upper_band = hl2 + (multiplier * atr)
     lower_band = hl2 - (multiplier * atr)
 
-    # Initialize final bands
+    # Initialize final bands with 0.0 or generic values to avoid NaN propagation issues
     final_upper_band = upper_band.copy()
     final_lower_band = lower_band.copy()
 
-    # Initialize supertrend
-    supertrend = pd.Series([True] * len(df), index=df.index)
+    # Initialize supertrend direction
+    # True = Uptrend, False = Downtrend
+    supertrend = [True] * len(df)
 
-    # Calculate Supertrend
+    # --- 4. The Loop (Recursive Logic) ---
+    # แปลงเป็น numpy array เพื่อความเร็วในการ loop (เร็วกว่า .iloc มาก)
+    close_np = close.values
+    upper_band_np = upper_band.values
+    lower_band_np = lower_band.values
+    final_upper_np = final_upper_band.values
+    final_lower_np = final_lower_band.values
+
     for i in range(1, len(df)):
-        # Current and previous indices
-        curr_idx = df.index[i]
-        prev_idx = df.index[i - 1]
+        # ถ้า ATR ยังเป็น NaN (ช่วงแรกของกราฟ) ให้ข้ามไป
+        if np.isnan(upper_band_np[i]):
+            continue
 
-        # Calculate final bands with rules
-        # Upper band: use lower of current and previous if trend is down
-        if (upper_band.iloc[i] < final_upper_band.iloc[i - 1]) or (
-            close.iloc[i - 1] > final_upper_band.iloc[i - 1]
+        # ถ้าก่อนหน้านี้เป็น NaN (เพิ่งเริ่มมีค่า) ให้ตั้งค่าเริ่มต้นเท่ากับ Basic Band
+        if np.isnan(final_upper_np[i - 1]):
+            final_upper_np[i] = upper_band_np[i]
+            final_lower_np[i] = lower_band_np[i]
+            continue
+
+        # Logic: Final Upper Band
+        # ถ้า Basic Upper Band ปัจจุบัน ต่ำกว่า Final Upper Band ก่อนหน้า -> ใช้ Basic (บีบลง)
+        # หรือ ถ้า ราคาปิดก่อนหน้า ทะลุ Final Upper Band ก่อนหน้าไปแล้ว (เทรนด์เปลี่ยน) -> รีเซ็ตเป็น Basic
+        if (upper_band_np[i] < final_upper_np[i - 1]) or (
+            close_np[i - 1] > final_upper_np[i - 1]
         ):
-            final_upper_band.iloc[i] = upper_band.iloc[i]
+            final_upper_np[i] = upper_band_np[i]
         else:
-            final_upper_band.iloc[i] = final_upper_band.iloc[i - 1]
+            final_upper_np[i] = final_upper_np[i - 1]
 
-        # Lower band: use higher of current and previous if trend is up
-        if (lower_band.iloc[i] > final_lower_band.iloc[i - 1]) or (
-            close.iloc[i - 1] < final_lower_band.iloc[i - 1]
+        # Logic: Final Lower Band
+        # ถ้า Basic Lower Band ปัจจุบัน สูงกว่า Final Lower Band ก่อนหน้า -> ใช้ Basic (ดันขึ้น)
+        # หรือ ถ้า ราคาปิดก่อนหน้า หลุด Final Lower Band ก่อนหน้า (เทรนด์เปลี่ยน) -> รีเซ็ตเป็น Basic
+        if (lower_band_np[i] > final_lower_np[i - 1]) or (
+            close_np[i - 1] < final_lower_np[i - 1]
         ):
-            final_lower_band.iloc[i] = lower_band.iloc[i]
+            final_lower_np[i] = lower_band_np[i]
         else:
-            final_lower_band.iloc[i] = final_lower_band.iloc[i - 1]
+            final_lower_np[i] = final_lower_np[i - 1]
 
-        # Determine trend direction
-        if close.iloc[i] <= final_lower_band.iloc[i]:
-            supertrend.iloc[i] = False  # Downtrend
-        elif close.iloc[i] >= final_upper_band.iloc[i]:
-            supertrend.iloc[i] = True  # Uptrend
-        else:
-            supertrend.iloc[i] = supertrend.iloc[i - 1]  # Continue previous trend
+        # Logic: Determine Trend Direction
+        # เช็คราคาปัจจุบันกับ Band เพื่อหาทิศทาง
+        if supertrend[i - 1] == True:  # ถ้าเดิมเป็นขาขึ้น
+            if close_np[i] <= final_lower_np[i]:
+                supertrend[i] = False  # เปลี่ยนเป็นขาลง
+            else:
+                supertrend[i] = True  # ยังคงขาขึ้น
+        else:  # ถ้าเดิมเป็นขาลง
+            if close_np[i] >= final_upper_np[i]:
+                supertrend[i] = True  # เปลี่ยนเป็นขาขึ้น
+            else:
+                supertrend[i] = False  # ยังคงขาลง
 
-    # Create Supertrend line
-    supertrend_line = pd.Series(index=df.index, dtype=float)
-    for i in range(len(df)):
-        if supertrend.iloc[i]:
-            supertrend_line.iloc[i] = final_lower_band.iloc[i]
-        else:
-            supertrend_line.iloc[i] = final_upper_band.iloc[i]
+    # --- 5. Create Supertrend Line ---
+    # สร้างเส้นเดียวเพื่อพลอตกราฟ
+    supertrend_line = np.where(supertrend, final_lower_np, final_upper_np)
 
-    # Add results to dataframe
+    # Add to DataFrame
     df["ATR"] = atr
     df["Supertrend"] = supertrend_line
-    df["Supertrend_Direction"] = supertrend  # True = Uptrend, False = Downtrend
-    df["ST_Upper_Band"] = final_upper_band
-    df["ST_Lower_Band"] = final_lower_band
+    df["Supertrend_Direction"] = supertrend  # True=Green, False=Red
+
+    # Optional: เก็บ Final Bands ไว้ดู Debug
+    # df['ST_Upper_Band'] = final_upper_np
+    # df['ST_Lower_Band'] = final_lower_np
 
     return df
 
