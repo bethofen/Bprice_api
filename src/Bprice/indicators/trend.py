@@ -2,13 +2,113 @@ import pandas as pd
 import numpy as np
 
 
+# def calculate_ut_bot_alerts(
+#     data: pd.DataFrame,
+#     key_value: int = 1,
+#     atr_period: int = 10,
+#     use_heikin_ashi: bool = False,
+# ) -> pd.DataFrame:
+#     # Input validation
+#     required_columns = ["open", "high", "low", "close"]
+#     if not all(col in data.columns for col in required_columns):
+#         raise ValueError(f"Data must contain columns: {required_columns}")
+
+#     if len(data) < atr_period:
+#         raise ValueError(f"Data length must be >= ATR period ({atr_period})")
+
+#     # Create working copy
+#     df = data.copy()
+
+#     # Calculate ATR (True Range)
+#     high_low = df["high"] - df["low"]
+#     high_close = np.abs(df["high"] - df["close"].shift(1))
+#     low_close = np.abs(df["low"] - df["close"].shift(1))
+
+#     true_range = np.maximum.reduce([high_low, high_close, low_close])
+#     atr = pd.Series(true_range).rolling(window=atr_period, min_periods=1).mean()
+
+#     # Calculate nLoss (ATR * Key Value)
+#     nLoss = key_value * atr
+
+#     # Determine source price
+#     if use_heikin_ashi:
+#         # Heikin Ashi Close = (O + H + L + C) / 4
+#         src = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
+#     else:
+#         src = df["close"]
+
+#     # Initialize trailing stop array
+#     trailing_stop = np.zeros(len(df))
+#     trailing_stop[0] = src.iloc[0]  # Initialize first value
+
+#     # Calculate UT Bot trailing stop
+#     for i in range(1, len(df)):
+#         prev_stop = trailing_stop[i - 1]
+#         prev_src = src.iloc[i - 1]
+#         curr_src = src.iloc[i]
+#         curr_loss = nLoss.iloc[i]
+
+#         # UT Bot Algorithm Logic
+#         if curr_src > prev_stop and prev_src > prev_stop:
+#             # Both current and previous above stop = Uptrend continues
+#             # Raise the stop loss (but don't lower it)
+#             trailing_stop[i] = max(prev_stop, curr_src - curr_loss)
+
+#         elif curr_src < prev_stop and prev_src < prev_stop:
+#             # Both current and previous below stop = Downtrend continues
+#             # Lower the stop loss (but don't raise it)
+#             trailing_stop[i] = min(prev_stop, curr_src + curr_loss)
+
+#         else:
+#             # Trend reversal detected
+#             if curr_src > prev_stop:
+#                 # Price broke above stop = New uptrend
+#                 trailing_stop[i] = curr_src - curr_loss
+#             else:
+#                 # Price broke below stop = New downtrend
+#                 trailing_stop[i] = curr_src + curr_loss
+
+#     # Add trailing stop to dataframe
+#     df["UT_TrailingStop"] = trailing_stop
+
+#     # Determine trend direction
+#     df["UT_Direction"] = src > df["UT_TrailingStop"]
+
+#     # Generate buy/sell signals (trend change detection)
+#     df["UT_Buy"] = (df["UT_Direction"] == True) & (df["UT_Direction"].shift(1) == False)
+#     df["UT_Sell"] = (df["UT_Direction"] == False) & (
+#         df["UT_Direction"].shift(1) == True
+#     )
+
+#     # Create position column for easier backtesting
+#     df["UT_Position"] = 0
+#     current_position = 0
+
+#     for i in range(len(df)):
+#         if df["UT_Buy"].iloc[i]:
+#             current_position = 1
+#         elif df["UT_Sell"].iloc[i]:
+#             current_position = -1
+#         df.iloc[i, df.columns.get_loc("UT_Position")] = current_position
+
+#     # Add some additional useful columns
+#     df["UT_Distance"] = np.abs(
+#         src - df["UT_TrailingStop"]
+#     )  # Distance from trailing stop
+#     df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100  # Distance as percentage
+
+#     # Clean up - remove any NaN values
+#     df = df.bfill().ffill()
+
+#     return df
+
+
 def calculate_ut_bot_alerts(
     data: pd.DataFrame,
-    key_value: int = 1,
+    key_value: float = 1.0,  # ควรเป็น float
     atr_period: int = 10,
     use_heikin_ashi: bool = False,
 ) -> pd.DataFrame:
-    # Input validation
     required_columns = ["open", "high", "low", "close"]
     if not all(col in data.columns for col in required_columns):
         raise ValueError(f"Data must contain columns: {required_columns}")
@@ -16,91 +116,104 @@ def calculate_ut_bot_alerts(
     if len(data) < atr_period:
         raise ValueError(f"Data length must be >= ATR period ({atr_period})")
 
-    # Create working copy
     df = data.copy()
 
-    # Calculate ATR (True Range)
+    # --- 1. จัดการ Heikin Ashi ตั้งแต่ต้นทาง ---
+    if use_heikin_ashi:
+        ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
+
+        # สร้าง HA Open
+        ha_open = np.zeros(len(df))
+        ha_open[0] = (df["open"].iloc[0] + df["close"].iloc[0]) / 2
+
+        # Numpy loop สำหรับ HA จะไวกว่า
+        o_arr, c_arr = df["open"].values, df["close"].values
+        for i in range(1, len(df)):
+            ha_open[i] = (ha_open[i - 1] + ha_close.iloc[i - 1]) / 2
+
+        ha_open_series = pd.Series(ha_open, index=df.index)
+
+        # HA High / HA Low
+        ha_high = pd.concat([df["high"], ha_open_series, ha_close], axis=1).max(axis=1)
+        ha_low = pd.concat([df["low"], ha_open_series, ha_close], axis=1).min(axis=1)
+
+        # เขียนทับค่าเพื่อไปคำนวณ ATR ต่อ
+        df["open"], df["high"], df["low"], df["close"] = (
+            ha_open_series,
+            ha_high,
+            ha_low,
+            ha_close,
+        )
+        src = df["close"]
+    else:
+        src = df["close"]
+
+    # --- 2. คำนวณ ATR แบบ TradingView (RMA) ---
     high_low = df["high"] - df["low"]
     high_close = np.abs(df["high"] - df["close"].shift(1))
     low_close = np.abs(df["low"] - df["close"].shift(1))
 
-    true_range = np.maximum.reduce([high_low, high_close, low_close])
-    atr = pd.Series(true_range).rolling(window=atr_period, min_periods=1).mean()
+    # ป้องกัน NaN แท่งแรก เพื่อไม่ให้สูตรเพี้ยน
+    high_close.iloc[0] = 0
+    low_close.iloc[0] = 0
 
-    # Calculate nLoss (ATR * Key Value)
+    true_range = np.maximum.reduce([high_low, high_close, low_close])
+
+    # *** จุดสำคัญ *** ใช้ EWM (Exponential) จำลองสูตร RMA ของ TradingView
+    atr = pd.Series(true_range).ewm(alpha=1 / atr_period, adjust=False).mean()
+
     nLoss = key_value * atr
 
-    # Determine source price
-    if use_heikin_ashi:
-        # Heikin Ashi Close = (O + H + L + C) / 4
-        src = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
-    else:
-        src = df["close"]
-
-    # Initialize trailing stop array
+    # --- 3. เพิ่มความเร็วด้วย Numpy Arrays ---
+    src_arr = src.values
+    loss_arr = nLoss.values
     trailing_stop = np.zeros(len(df))
-    trailing_stop[0] = src.iloc[0]  # Initialize first value
+    trailing_stop[0] = src_arr[0]
 
-    # Calculate UT Bot trailing stop
+    # UT Bot Algorithm Logic
     for i in range(1, len(df)):
         prev_stop = trailing_stop[i - 1]
-        prev_src = src.iloc[i - 1]
-        curr_src = src.iloc[i]
-        curr_loss = nLoss.iloc[i]
+        prev_src = src_arr[i - 1]
+        curr_src = src_arr[i]
+        curr_loss = loss_arr[i]
 
-        # UT Bot Algorithm Logic
         if curr_src > prev_stop and prev_src > prev_stop:
-            # Both current and previous above stop = Uptrend continues
-            # Raise the stop loss (but don't lower it)
             trailing_stop[i] = max(prev_stop, curr_src - curr_loss)
-
         elif curr_src < prev_stop and prev_src < prev_stop:
-            # Both current and previous below stop = Downtrend continues
-            # Lower the stop loss (but don't raise it)
             trailing_stop[i] = min(prev_stop, curr_src + curr_loss)
-
         else:
-            # Trend reversal detected
             if curr_src > prev_stop:
-                # Price broke above stop = New uptrend
                 trailing_stop[i] = curr_src - curr_loss
             else:
-                # Price broke below stop = New downtrend
                 trailing_stop[i] = curr_src + curr_loss
 
-    # Add trailing stop to dataframe
     df["UT_TrailingStop"] = trailing_stop
-
-    # Determine trend direction
     df["UT_Direction"] = src > df["UT_TrailingStop"]
 
-    # Generate buy/sell signals (trend change detection)
+    # สร้างสัญญาณ
     df["UT_Buy"] = (df["UT_Direction"] == True) & (df["UT_Direction"].shift(1) == False)
     df["UT_Sell"] = (df["UT_Direction"] == False) & (
         df["UT_Direction"].shift(1) == True
     )
 
-    # Create position column for easier backtesting
-    df["UT_Position"] = 0
-    current_position = 0
+    # --- 4. จัดการ Position Column ด้วย Numpy (เร็วกว่า iloc) ---
+    positions = np.zeros(len(df))
+    current_pos = 0
+    buy_arr = df["UT_Buy"].values
+    sell_arr = df["UT_Sell"].values
 
     for i in range(len(df)):
-        if df["UT_Buy"].iloc[i]:
-            current_position = 1
-        elif df["UT_Sell"].iloc[i]:
-            current_position = -1
-        df.iloc[i, df.columns.get_loc("UT_Position")] = current_position
+        if buy_arr[i]:
+            current_pos = 1
+        elif sell_arr[i]:
+            current_pos = -1
+        positions[i] = current_pos
 
-    # Add some additional useful columns
-    df["UT_Distance"] = np.abs(
-        src - df["UT_TrailingStop"]
-    )  # Distance from trailing stop
-    df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100  # Distance as percentage
+    df["UT_Position"] = positions
+    df["UT_Distance"] = np.abs(src - df["UT_TrailingStop"])
+    df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100
 
-    # Clean up - remove any NaN values
-    df = df.bfill().ffill()
-
-    return df
+    return df.bfill().ffill()
 
 
 # Example Usage:
