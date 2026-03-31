@@ -105,7 +105,7 @@ import numpy as np
 
 def calculate_ut_bot_alerts(
     data: pd.DataFrame,
-    key_value: float = 1.0,  # ควรเป็น float
+    key_value: float = 1.0,
     atr_period: int = 10,
     use_heikin_ashi: bool = False,
 ) -> pd.DataFrame:
@@ -118,59 +118,54 @@ def calculate_ut_bot_alerts(
 
     df = data.copy()
 
-    # --- 1. จัดการ Heikin Ashi ตั้งแต่ต้นทาง ---
+    # --- 1. จัดการ Heikin Ashi ---
     if use_heikin_ashi:
         ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
+        ha_close_arr = ha_close.values  # FIX: ใช้ .values แทน .iloc ใน loop
 
-        # สร้าง HA Open
         ha_open = np.zeros(len(df))
         ha_open[0] = (df["open"].iloc[0] + df["close"].iloc[0]) / 2
 
-        # Numpy loop สำหรับ HA จะไวกว่า
-        o_arr, c_arr = df["open"].values, df["close"].values
         for i in range(1, len(df)):
-            ha_open[i] = (ha_open[i - 1] + ha_close.iloc[i - 1]) / 2
+            ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2  # FIX: ลบ dead code o_arr/c_arr
 
         ha_open_series = pd.Series(ha_open, index=df.index)
 
-        # HA High / HA Low
         ha_high = pd.concat([df["high"], ha_open_series, ha_close], axis=1).max(axis=1)
         ha_low = pd.concat([df["low"], ha_open_series, ha_close], axis=1).min(axis=1)
 
-        # เขียนทับค่าเพื่อไปคำนวณ ATR ต่อ
-        df["open"], df["high"], df["low"], df["close"] = (
-            ha_open_series,
-            ha_high,
-            ha_low,
-            ha_close,
-        )
-        src = df["close"]
-    else:
-        src = df["close"]
+        df["open"] = ha_open_series
+        df["high"] = ha_high
+        df["low"] = ha_low
+        df["close"] = ha_close
+
+    src = df["close"]
 
     # --- 2. คำนวณ ATR แบบ TradingView (RMA) ---
     high_low = df["high"] - df["low"]
-    high_close = np.abs(df["high"] - df["close"].shift(1))
-    low_close = np.abs(df["low"] - df["close"].shift(1))
 
-    # ป้องกัน NaN แท่งแรก เพื่อไม่ให้สูตรเพี้ยน
+    # FIX: ทำ copy ก่อนแก้ค่าเพื่อป้องกัน SettingWithCopyWarning
+    high_close = np.abs(df["high"] - df["close"].shift(1)).copy()
+    low_close = np.abs(df["low"] - df["close"].shift(1)).copy()
     high_close.iloc[0] = 0
     low_close.iloc[0] = 0
 
-    true_range = np.maximum.reduce([high_low, high_close, low_close])
+    # FIX: ใช้ np.maximum ตรงๆ แทน np.maximum.reduce
+    true_range = np.maximum(high_low, np.maximum(high_close, low_close))
 
-    # *** จุดสำคัญ *** ใช้ EWM (Exponential) จำลองสูตร RMA ของ TradingView
-    atr = pd.Series(true_range).ewm(alpha=1 / atr_period, adjust=False).mean()
+    # FIX: ระบุ index=df.index เพื่อให้ตรงกับ DataFrame (สำคัญมาก!)
+    atr = pd.Series(true_range.values, index=df.index).ewm(
+        alpha=1 / atr_period, adjust=False
+    ).mean()
 
     nLoss = key_value * atr
 
-    # --- 3. เพิ่มความเร็วด้วย Numpy Arrays ---
+    # --- 3. UT Bot Trailing Stop (Numpy loop) ---
     src_arr = src.values
     loss_arr = nLoss.values
     trailing_stop = np.zeros(len(df))
     trailing_stop[0] = src_arr[0]
 
-    # UT Bot Algorithm Logic
     for i in range(1, len(df)):
         prev_stop = trailing_stop[i - 1]
         prev_src = src_arr[i - 1]
@@ -190,13 +185,12 @@ def calculate_ut_bot_alerts(
     df["UT_TrailingStop"] = trailing_stop
     df["UT_Direction"] = src > df["UT_TrailingStop"]
 
-    # สร้างสัญญาณ
-    df["UT_Buy"] = (df["UT_Direction"] == True) & (df["UT_Direction"].shift(1) == False)
-    df["UT_Sell"] = (df["UT_Direction"] == False) & (
-        df["UT_Direction"].shift(1) == True
-    )
-
-    # --- 4. จัดการ Position Column ด้วย Numpy (เร็วกว่า iloc) ---
+    # FIX: ลบ == True/False ออก ใช้ boolean โดยตรง
+    prev_direction = df["UT_Direction"].astype("boolean").shift(1).fillna(False)
+    df["UT_Buy"] = df["UT_Direction"] & ~prev_direction
+    df["UT_Sell"] = ~df["UT_Direction"] & prev_direction
+    
+    # --- 4. Position (Numpy loop) ---
     positions = np.zeros(len(df))
     current_pos = 0
     buy_arr = df["UT_Buy"].values
@@ -212,6 +206,16 @@ def calculate_ut_bot_alerts(
     df["UT_Position"] = positions
     df["UT_Distance"] = np.abs(src - df["UT_TrailingStop"])
     df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100
+
+    # FIX: ตรวจสอบ NaN ก่อน fill แทนการ fill แบบ silent
+    nan_count = df[["UT_TrailingStop", "UT_Direction", "UT_Buy", "UT_Sell"]].isna().sum().sum()
+    if nan_count > 0:
+        import warnings
+        warnings.warn(
+            f"Found {nan_count} NaN(s) in output columns — check input data quality.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     return df.bfill().ffill()
 
