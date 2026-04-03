@@ -127,7 +127,9 @@ def calculate_ut_bot_alerts(
         ha_open[0] = (df["open"].iloc[0] + df["close"].iloc[0]) / 2
 
         for i in range(1, len(df)):
-            ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2  # FIX: ลบ dead code o_arr/c_arr
+            ha_open[i] = (
+                ha_open[i - 1] + ha_close_arr[i - 1]
+            ) / 2  # FIX: ลบ dead code o_arr/c_arr
 
         ha_open_series = pd.Series(ha_open, index=df.index)
 
@@ -154,9 +156,11 @@ def calculate_ut_bot_alerts(
     true_range = np.maximum(high_low, np.maximum(high_close, low_close))
 
     # FIX: ระบุ index=df.index เพื่อให้ตรงกับ DataFrame (สำคัญมาก!)
-    atr = pd.Series(true_range.values, index=df.index).ewm(
-        alpha=1 / atr_period, adjust=False
-    ).mean()
+    atr = (
+        pd.Series(true_range.values, index=df.index)
+        .ewm(alpha=1 / atr_period, adjust=False)
+        .mean()
+    )
 
     nLoss = key_value * atr
 
@@ -164,7 +168,10 @@ def calculate_ut_bot_alerts(
     src_arr = src.values
     loss_arr = nLoss.values
     trailing_stop = np.zeros(len(df))
-    trailing_stop[0] = src_arr[0]
+    # FIX: Initialize trailing stop with ATR offset instead of src[0]
+    # Using src[0] causes trailing_stop == close on bar 0 (distance = 0)
+    # which always forces UT_Direction[0] = False and creates a false signal
+    trailing_stop[0] = src_arr[0] - loss_arr[0]
 
     for i in range(1, len(df)):
         prev_stop = trailing_stop[i - 1]
@@ -182,6 +189,31 @@ def calculate_ut_bot_alerts(
             else:
                 trailing_stop[i] = curr_src + curr_loss
 
+    # FIX: Validate & fix cases where trailing stop equals close price
+    # If they are the same, the direction signal becomes ambiguous (src > ts is False)
+    # Nudge trailing_stop by a tiny epsilon to maintain clear direction
+    eps = 1e-8
+    for i in range(len(df)):
+        if trailing_stop[i] == src_arr[i]:
+            # Determine nudge direction from previous bar's trend
+            if i > 0 and src_arr[i - 1] > trailing_stop[i - 1]:
+                # Was in uptrend, nudge stop down to keep uptrend
+                trailing_stop[i] = src_arr[i] - eps
+            else:
+                # Was in downtrend or first bar, nudge stop up to keep downtrend
+                trailing_stop[i] = src_arr[i] + eps
+
+    # Final check: raise error if exact equality still exists (should never happen)
+    exact_match_mask = trailing_stop == src_arr
+    if exact_match_mask.sum() > 0:
+        bad_indices = np.where(exact_match_mask)[0]
+        raise ValueError(
+            f"UT Bot Error: Trailing stop equals close price on {exact_match_mask.sum()} bar(s) "
+            f"(indices: {bad_indices[:10].tolist()}). "
+            f"This makes the direction signal ambiguous. "
+            f"Try adjusting key_value or atr_period to increase the stop distance."
+        )
+
     df["UT_TrailingStop"] = trailing_stop
     df["UT_Direction"] = src > df["UT_TrailingStop"]
 
@@ -189,7 +221,6 @@ def calculate_ut_bot_alerts(
     prev_direction = df["UT_Direction"].astype("boolean").shift(1).fillna(False)
     df["UT_Buy"] = df["UT_Direction"] & ~prev_direction
     df["UT_Sell"] = ~df["UT_Direction"] & prev_direction
-    
     # --- 4. Position (Numpy loop) ---
     positions = np.zeros(len(df))
     current_pos = 0
@@ -208,9 +239,12 @@ def calculate_ut_bot_alerts(
     df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100
 
     # FIX: ตรวจสอบ NaN ก่อน fill แทนการ fill แบบ silent
-    nan_count = df[["UT_TrailingStop", "UT_Direction", "UT_Buy", "UT_Sell"]].isna().sum().sum()
+    nan_count = (
+        df[["UT_TrailingStop", "UT_Direction", "UT_Buy", "UT_Sell"]].isna().sum().sum()
+    )
     if nan_count > 0:
         import warnings
+
         warnings.warn(
             f"Found {nan_count} NaN(s) in output columns — check input data quality.",
             UserWarning,
