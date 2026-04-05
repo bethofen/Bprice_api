@@ -117,7 +117,7 @@ import warnings
 
 
 def calculate_ut_bot_alerts(
-    df: pd.DataFrame,
+    data: pd.DataFrame,
     key_value: float = 1.0,
     atr_period: int = 10,
     use_heikin_ashi: bool = False,
@@ -140,33 +140,33 @@ def calculate_ut_bot_alerts(
     """
     # ── Validation ─────────────────────────────────────────────────────
     required = ["open", "high", "low", "close"]
-    missing = [c for c in required if c not in df.columns]
+    missing = [c for c in required if c not in data.columns]
     if missing:
         raise ValueError(f"Missing columns: {missing}")
-    if len(df) < atr_period:
-        raise ValueError(f"Need >= {atr_period} rows (atr_period), got {len(df)}")
+    if len(data) < atr_period:
+        raise ValueError(f"Need >= {atr_period} rows (atr_period), got {len(data)}")
 
-    out = df.copy()
+    out = data.copy()
 
     # ── Source (HA close or regular close) ──────────────────────────────
     # Pine: atr() always uses REGULAR candles; only `src` switches to HA
     if use_heikin_ashi:
-        ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
-        ha_open = np.empty(len(df))
-        ha_open[0] = (df["open"].iat[0] + df["close"].iat[0]) / 2
+        ha_close = (data["open"] + data["high"] + data["low"] + data["close"]) / 4
+        ha_open = np.empty(len(data))
+        ha_open[0] = (data["open"].iat[0] + data["close"].iat[0]) / 2
         ha_close_arr = ha_close.values
-        for i in range(1, len(df)):
+        for i in range(1, len(data)):
             ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2
         src = ha_close.values
     else:
-        src = df["close"].values.copy()
+        src = data["close"].values.copy()
 
     # ── ATR on REGULAR candles (Pine-accurate) ─────────────────────────
-    high = df["high"].values
-    low = df["low"].values
-    close = df["close"].values
+    high = data["high"].values
+    low = data["low"].values
+    close = data["close"].values
 
-    prev_close = np.empty(len(df))
+    prev_close = np.empty(len(data))
     prev_close[0] = np.nan
     prev_close[1:] = close[:-1]
 
@@ -184,7 +184,7 @@ def calculate_ut_bot_alerts(
     n_loss = key_value * atr
 
     # ── ATR Trailing Stop ──────────────────────────────────────────────
-    n = len(df)
+    n = len(data)
     ts = np.empty(n)
     # Bar 0: Pine evaluates src > nz(ts[1],0) → True (price>0),
     #         but src[1] is na → falls to 3rd branch → src - nLoss
@@ -243,7 +243,7 @@ def calculate_ut_bot_alerts(
     dist_pct = np.where(src != 0, (dist / src) * 100, 0.0)
 
     # ── Assemble output ────────────────────────────────────────────────
-    idx = df.index
+    idx = data.index
     out["xATR"] = pd.Series(atr, index=idx)
     out["nLoss"] = pd.Series(n_loss, index=idx)
     out["UT_TrailingStop"] = pd.Series(ts, index=idx)
@@ -275,7 +275,7 @@ def calculate_ut_bot_alerts(
 
 
 # Example Usage:
-# df = pd.read_csv('your_data.csv')
+# data = pd.read_csv('your_data.csv')
 # df = UT_Bot_Alerts(df, a=1, c=10, h=False)
 # print(df[['close', 'xATRTrailingStop', 'pos', 'buy', 'sell', 'barcolor']].tail())
 
