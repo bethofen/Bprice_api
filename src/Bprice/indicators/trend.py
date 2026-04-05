@@ -102,156 +102,176 @@ import numpy as np
 
 #     return df
 
+"""
+UT Bot Alerts — Pine Script v4 → Python (merged & optimized)
+=============================================================
+Combines Pine-accurate ATR (on regular candles), correct bar-0 init,
+epsilon guard, input validation, and extra analytics columns.
+
+Usage:
+    df = pd.read_csv("ohlcv.csv")  # needs: open, high, low, close
+    result = ut_bot_alerts(df, key_value=1, atr_period=10)
+"""
+
+import warnings
+
 
 def calculate_ut_bot_alerts(
-    data: pd.DataFrame,
+    df: pd.DataFrame,
     key_value: float = 1.0,
     atr_period: int = 10,
     use_heikin_ashi: bool = False,
 ) -> pd.DataFrame:
-    required_columns = ["open", "high", "low", "close"]
-    if not all(col in data.columns for col in required_columns):
-        raise ValueError(f"Data must contain columns: {required_columns}")
+    """
+    UT Bot Alerts indicator.
 
-    if len(data) < atr_period:
-        raise ValueError(f"Data length must be >= ATR period ({atr_period})")
+    Parameters
+    ----------
+    df : DataFrame with columns: open, high, low, close.
+    key_value : ATR multiplier — controls trailing stop sensitivity.
+    atr_period : ATR lookback period.
+    use_heikin_ashi : Use Heikin Ashi close as source (ATR stays on regular candles).
 
-    df = data.copy()
+    Returns
+    -------
+    DataFrame with columns:
+        xATR, nLoss, trailing_stop, direction, buy, sell,
+        bar_buy, bar_sell, position, distance, distance_pct
+    """
+    # ── Validation ─────────────────────────────────────────────────────
+    required = ["open", "high", "low", "close"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing columns: {missing}")
+    if len(df) < atr_period:
+        raise ValueError(f"Need >= {atr_period} rows (atr_period), got {len(df)}")
 
-    # --- 1. จัดการ Heikin Ashi ---
+    out = df.copy()
+
+    # ── Source (HA close or regular close) ──────────────────────────────
+    # Pine: atr() always uses REGULAR candles; only `src` switches to HA
     if use_heikin_ashi:
         ha_close = (df["open"] + df["high"] + df["low"] + df["close"]) / 4
-        ha_close_arr = ha_close.values  # FIX: ใช้ .values แทน .iloc ใน loop
-
-        ha_open = np.zeros(len(df))
-        ha_open[0] = (df["open"].iloc[0] + df["close"].iloc[0]) / 2
-
+        ha_open = np.empty(len(df))
+        ha_open[0] = (df["open"].iat[0] + df["close"].iat[0]) / 2
+        ha_close_arr = ha_close.values
         for i in range(1, len(df)):
-            ha_open[i] = (
-                ha_open[i - 1] + ha_close_arr[i - 1]
-            ) / 2  # FIX: ลบ dead code o_arr/c_arr
+            ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2
+        src = ha_close.values
+    else:
+        src = df["close"].values.copy()
 
-        ha_open_series = pd.Series(ha_open, index=df.index)
+    # ── ATR on REGULAR candles (Pine-accurate) ─────────────────────────
+    high = df["high"].values
+    low = df["low"].values
+    close = df["close"].values
 
-        ha_high = pd.concat([df["high"], ha_open_series, ha_close], axis=1).max(axis=1)
-        ha_low = pd.concat([df["low"], ha_open_series, ha_close], axis=1).min(axis=1)
+    prev_close = np.empty(len(df))
+    prev_close[0] = np.nan
+    prev_close[1:] = close[:-1]
 
-        df["open"] = ha_open_series
-        df["high"] = ha_high
-        df["low"] = ha_low
-        df["close"] = ha_close
-
-    src = df["close"]
-
-    # --- 2. คำนวณ ATR แบบ TradingView (RMA) ---
-    high_low = df["high"] - df["low"]
-
-    # FIX: ทำ copy ก่อนแก้ค่าเพื่อป้องกัน SettingWithCopyWarning
-    high_close = np.abs(df["high"] - df["close"].shift(1)).copy()
-    low_close = np.abs(df["low"] - df["close"].shift(1)).copy()
-    high_close.iloc[0] = 0
-    low_close.iloc[0] = 0
-
-    # FIX: ใช้ np.maximum ตรงๆ แทน np.maximum.reduce
-    true_range = np.maximum(high_low, np.maximum(high_close, low_close))
-
-    # FIX: ระบุ index=df.index เพื่อให้ตรงกับ DataFrame (สำคัญมาก!)
-    atr = (
-        pd.Series(true_range.values, index=df.index)
-        .ewm(alpha=1 / atr_period, adjust=False)
-        .mean()
+    tr = np.maximum(
+        high - low,
+        np.maximum(
+            np.abs(high - prev_close),
+            np.abs(low - prev_close),
+        ),
     )
+    tr[0] = high[0] - low[0]  # bar 0: no prev_close → TR = H-L
 
-    nLoss = key_value * atr
+    # RMA (Wilder's smoothing) = EWM alpha=1/period
+    atr = pd.Series(tr).ewm(alpha=1 / atr_period, adjust=False).mean().values
+    n_loss = key_value * atr
 
-    # --- 3. UT Bot Trailing Stop (Numpy loop) ---
-    src_arr = src.values
-    loss_arr = nLoss.values
-    trailing_stop = np.zeros(len(df))
-    # FIX: Initialize trailing stop with ATR offset instead of src[0]
-    # Using src[0] causes trailing_stop == close on bar 0 (distance = 0)
-    # which always forces UT_Direction[0] = False and creates a false signal
-    trailing_stop[0] = src_arr[0] - loss_arr[0]
+    # ── ATR Trailing Stop ──────────────────────────────────────────────
+    n = len(df)
+    ts = np.empty(n)
+    # Bar 0: Pine evaluates src > nz(ts[1],0) → True (price>0),
+    #         but src[1] is na → falls to 3rd branch → src - nLoss
+    ts[0] = src[0] - n_loss[0]
 
-    for i in range(1, len(df)):
-        prev_stop = trailing_stop[i - 1]
-        prev_src = src_arr[i - 1]
-        curr_src = src_arr[i]
-        curr_loss = loss_arr[i]
+    for i in range(1, n):
+        prev = ts[i - 1]
+        s = src[i]
+        s1 = src[i - 1]
+        nl = n_loss[i]
 
-        if curr_src > prev_stop and prev_src > prev_stop:
-            trailing_stop[i] = max(prev_stop, curr_src - curr_loss)
-        elif curr_src < prev_stop and prev_src < prev_stop:
-            trailing_stop[i] = min(prev_stop, curr_src + curr_loss)
+        if s > prev and s1 > prev:
+            ts[i] = max(prev, s - nl)  # uptrend: ratchet up
+        elif s < prev and s1 < prev:
+            ts[i] = min(prev, s + nl)  # downtrend: ratchet down
+        elif s > prev:
+            ts[i] = s - nl  # flip to uptrend
         else:
-            if curr_src > prev_stop:
-                trailing_stop[i] = curr_src - curr_loss
+            ts[i] = s + nl  # flip to downtrend
+
+    # ── Epsilon guard: nudge if ts == src exactly ──────────────────────
+    eps = 1e-10
+    mask = ts == src
+    if mask.any():
+        for i in np.where(mask)[0]:
+            if i > 0 and src[i - 1] > ts[i - 1]:
+                ts[i] = src[i] - eps  # keep uptrend
             else:
-                trailing_stop[i] = curr_src + curr_loss
+                ts[i] = src[i] + eps  # keep downtrend
 
-    # FIX: Validate & fix cases where trailing stop equals close price
-    # If they are the same, the direction signal becomes ambiguous (src > ts is False)
-    # Nudge trailing_stop by a tiny epsilon to maintain clear direction
-    eps = 1e-8
-    for i in range(len(df)):
-        if trailing_stop[i] == src_arr[i]:
-            # Determine nudge direction from previous bar's trend
-            if i > 0 and src_arr[i - 1] > trailing_stop[i - 1]:
-                # Was in uptrend, nudge stop down to keep uptrend
-                trailing_stop[i] = src_arr[i] - eps
-            else:
-                # Was in downtrend or first bar, nudge stop up to keep downtrend
-                trailing_stop[i] = src_arr[i] + eps
+    # ── Signals ────────────────────────────────────────────────────────
+    direction = src > ts  # True = bullish
 
-    # Final check: raise error if exact equality still exists (should never happen)
-    exact_match_mask = trailing_stop == src_arr
-    if exact_match_mask.sum() > 0:
-        bad_indices = np.where(exact_match_mask)[0]
-        raise ValueError(
-            f"UT Bot Error: Trailing stop equals close price on {exact_match_mask.sum()} bar(s) "
-            f"(indices: {bad_indices[:10].tolist()}). "
-            f"This makes the direction signal ambiguous. "
-            f"Try adjusting key_value or atr_period to increase the stop distance."
-        )
+    # Crossover: direction flips from False→True (buy) / True→False (sell)
+    prev_dir = np.empty(n, dtype=bool)
+    prev_dir[0] = False
+    prev_dir[1:] = direction[:-1]
 
-    df["UT_TrailingStop"] = trailing_stop
-    df["UT_Direction"] = src > df["UT_TrailingStop"]
+    buy = direction & ~prev_dir
+    sell = ~direction & prev_dir
+    bar_buy = direction  # bar coloring
+    bar_sell = ~direction
 
-    # FIX: ลบ == True/False ออก ใช้ boolean โดยตรง
-    prev_direction = df["UT_Direction"].astype("boolean").shift(1).fillna(False)
-    df["UT_Buy"] = df["UT_Direction"] & ~prev_direction
-    df["UT_Sell"] = ~df["UT_Direction"] & prev_direction
-    # --- 4. Position (Numpy loop) ---
-    positions = np.zeros(len(df))
-    current_pos = 0
-    buy_arr = df["UT_Buy"].values
-    sell_arr = df["UT_Sell"].values
+    # ── Position tracking ──────────────────────────────────────────────
+    pos = np.zeros(n, dtype=np.int8)
+    for i in range(n):
+        if buy[i]:
+            pos[i] = 1
+        elif sell[i]:
+            pos[i] = -1
+        elif i > 0:
+            pos[i] = pos[i - 1]
 
-    for i in range(len(df)):
-        if buy_arr[i]:
-            current_pos = 1
-        elif sell_arr[i]:
-            current_pos = -1
-        positions[i] = current_pos
+    # ── Distance metrics ───────────────────────────────────────────────
+    dist = np.abs(src - ts)
+    dist_pct = np.where(src != 0, (dist / src) * 100, 0.0)
 
-    df["UT_Position"] = positions
-    df["UT_Distance"] = np.abs(src - df["UT_TrailingStop"])
-    df["UT_Distance_Pct"] = (df["UT_Distance"] / src) * 100
+    # ── Assemble output ────────────────────────────────────────────────
+    idx = df.index
+    out["xATR"] = pd.Series(atr, index=idx)
+    out["nLoss"] = pd.Series(n_loss, index=idx)
+    out["UT_TrailingStop"] = pd.Series(ts, index=idx)
+    out["direction"] = pd.Series(direction, index=idx)
+    out["entry_buy_signal"] = pd.Series(buy, index=idx)
+    out["entry_sell_signal"] = pd.Series(sell, index=idx)
+    out["bar_buy"] = pd.Series(bar_buy, index=idx)
+    out["bar_sell"] = pd.Series(bar_sell, index=idx)
+    out["position"] = pd.Series(pos, index=idx)
+    out["distance"] = pd.Series(dist, index=idx)
+    out["distance_pct"] = pd.Series(dist_pct, index=idx)
 
-    # FIX: ตรวจสอบ NaN ก่อน fill แทนการ fill แบบ silent
-    nan_count = (
-        df[["UT_TrailingStop", "UT_Direction", "UT_Buy", "UT_Sell"]].isna().sum().sum()
-    )
+    # ── NaN audit ──────────────────────────────────────────────────────
+    output_cols = [
+        "UT_TrailingStop",
+        "direction",
+        "entry_buy_signal",
+        "entry_sell_signal",
+    ]
+    nan_count = out[output_cols].isna().sum().sum()
     if nan_count > 0:
-        import warnings
-
         warnings.warn(
-            f"Found {nan_count} NaN(s) in output columns — check input data quality.",
+            f"Found {nan_count} NaN(s) in output — check input data quality.",
             UserWarning,
             stacklevel=2,
         )
 
-    return df.bfill().ffill()
+    return out
 
 
 # Example Usage:
