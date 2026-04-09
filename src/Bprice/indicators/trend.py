@@ -1,5 +1,167 @@
 import pandas as pd
 import numpy as np
+import warnings
+
+# Suppress pandas fragmentation warnings for large dataframe quantitative operations
+warnings.filterwarnings("ignore", category=pd.errors.PerformanceWarning)
+
+
+def compute_heikin_ashi(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes Heikin-Ashi synthetic candlestick data based on standard OHLC inputs.
+    Strictly follows the recursive Munehisa Homma formulation where HA_Open relies on previous HA states.
+    """
+    ha_df = df.copy()
+
+    # Standardize nomenclature for algorithmic consistency
+    col_map = {col: col.lower() for col in ha_df.columns}
+    ha_df = ha_df.rename(columns=col_map)
+
+    required_cols = ["open", "high", "low", "close"]
+    for col in required_cols:
+        if col not in ha_df.columns:
+            raise ValueError(
+                f"Ingested DataFrame must strictly contain '{col}' column."
+            )
+
+    # Calculate HA_Close: Arithmetic mean of current OHLC
+    ha_df["ha_close"] = (
+        ha_df["open"] + ha_df["high"] + ha_df["low"] + ha_df["close"]
+    ) / 4.0
+
+    # Initialize HA_Open contiguous memory array for state-dependent iteration
+    length = len(ha_df)
+    ha_open = np.zeros(length)
+
+    # BUG FIX 1: .iloc needs an index — use .iloc[0] for genesis bar
+    ha_open[0] = (ha_df["open"].iloc[0] + ha_df["close"].iloc[0]) / 2.0
+
+    ha_close_vals = ha_df["ha_close"].values
+
+    # Iterative recursive formulation for subsequent periods
+    for i in range(1, length):
+        ha_open[i] = (ha_open[i - 1] + ha_close_vals[i - 1]) / 2.0
+
+    ha_df["ha_open"] = ha_open
+
+    # Vectorized computation of absolute extremes
+    ha_df["ha_high"] = ha_df[["ha_open", "ha_close", "high"]].max(axis=1)
+    ha_df["ha_low"] = ha_df[["ha_open", "ha_close", "low"]].min(axis=1)
+
+    return ha_df
+
+
+def calculate_ut_bot_alerts(
+    data: pd.DataFrame,
+    key_value: float = 1.0,
+    atr_period: int = 10,
+    use_heikin_ashi: bool = False,
+) -> pd.DataFrame:
+    """
+    Translates the UT Bot Alerts Pine Script indicator into a robust Python environment.
+    Computes volatility-scaled trailing stops and identifies discrete, actionable crossover signals.
+
+    Parameters:
+    - df (pd.DataFrame): OHLC standard pricing data.
+    - key_value (float): Sensitivity multiplier (analogous to 'a' in Pine Script).
+    - atr_period (int): Lookback period for True Range smoothing (analogous to 'c').
+    - use_heikin_ashi (bool): Flag to utilize HA synthetic closing prices as the input signal.
+
+    Returns:
+    - pd.DataFrame: Appended dataframe containing actionable signals and risk parameters.
+    """
+    data = data.copy()
+    col_map = {col: col.lower() for col in data.columns}
+    data = data.rename(columns=col_map)
+
+    # Determine execution Source Price series based on parameter toggle
+    if use_heikin_ashi:
+        ha_dataframe = compute_heikin_ashi(data)
+        src = ha_dataframe["ha_close"].values
+        # Use HA OHLC for True Range to replicate TradingView behavior exactly
+        h_series = ha_dataframe["ha_high"]
+        l_series = ha_dataframe["ha_low"]
+        c_series = ha_dataframe["ha_close"]
+    else:
+        src = data["close"].values
+        h_series = data["high"]
+        l_series = data["low"]
+        c_series = data["close"]
+
+    # True Range (TR) Matrix Computation via Vectorization
+    high_low = h_series - l_series
+    high_close = np.abs(h_series - c_series.shift(1))
+    low_close = np.abs(l_series - c_series.shift(1))
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+
+    # Wilder's Smoothing / Running Moving Average (RMA) calculation for ATR
+    # Emulates Pine Script's default atr() native function
+    alpha = 1.0 / atr_period
+    atr = tr.ewm(alpha=alpha, adjust=False).mean().values
+
+    # Establish dynamic volatility threshold variable
+    nLoss = key_value * atr
+
+    # Pre-allocate memory arrays for state machine execution
+    length = len(data)
+    xATRTrailingStop = np.zeros(length)
+    pos = np.zeros(length)
+
+    # Explicit path-dependent state loop resolving Pine Script 'iff()' statements
+    for i in range(1, length):
+        prev_stop = xATRTrailingStop[i - 1]
+        curr_src = src[i]
+        prev_src = src[i - 1]
+        curr_nLoss = nLoss[i]
+
+        # 1. Trailing Stop Ratchet Logic emulation
+        if curr_src > prev_stop and prev_src > prev_stop:
+            xATRTrailingStop[i] = max(prev_stop, curr_src - curr_nLoss)
+        elif curr_src < prev_stop and prev_src < prev_stop:
+            xATRTrailingStop[i] = min(prev_stop, curr_src + curr_nLoss)
+        elif curr_src > prev_stop:
+            xATRTrailingStop[i] = curr_src - curr_nLoss
+        else:
+            xATRTrailingStop[i] = curr_src + curr_nLoss
+
+        # 2. Market Posture State Tracking (1 for Long, -1 for Short)
+        if prev_src < prev_stop and curr_src > prev_stop:
+            pos[i] = 1
+        elif prev_src > prev_stop and curr_src < prev_stop:
+            pos[i] = -1
+        else:
+            pos[i] = pos[i - 1]
+
+    # Epsilon Guard to prevent Stop equating Close price
+    eps = 1e-10
+    mask = xATRTrailingStop == src
+    if mask.any():
+        for i in np.where(mask)[0]:
+            if i > 0 and src[i - 1] > xATRTrailingStop[i - 1]:
+                xATRTrailingStop[i] = src[i] - eps
+            else:
+                xATRTrailingStop[i] = src[i] + eps
+
+    # BUG FIX 2: Assign to column, not overwrite the entire DataFrame
+    data["xATRTrailingStop"] = xATRTrailingStop
+    data["Position"] = pos
+    data["UT_TrailingStop"] = xATRTrailingStop
+    # EMA(src, 1) is identity — just the source price itself
+    data["ema_1"] = src
+
+    # BUG FIX 3: Assign to new columns (Buy/Sell), compare against the correct column name
+    data["entry_buy_signal"] = (
+        (data["Position"] == 1)
+        & (data["Position"].shift(1) != 1)
+        & (data["ema_1"] > data["xATRTrailingStop"])
+    )
+    data["entry_sell_signal"] = (
+        (data["Position"] == -1)
+        & (data["Position"].shift(1) != -1)
+        & (data["ema_1"] < data["xATRTrailingStop"])
+    )
+
+    return data
 
 
 # def calculate_ut_bot_alerts(
@@ -113,165 +275,165 @@ Usage:
     result = ut_bot_alerts(df, key_value=1, atr_period=10)
 """
 
-import warnings
+# import warnings
 
 
-def calculate_ut_bot_alerts(
-    data: pd.DataFrame,
-    key_value: float = 1.0,
-    atr_period: int = 10,
-    use_heikin_ashi: bool = False,
-) -> pd.DataFrame:
-    """
-    UT Bot Alerts indicator.
+# def calculate_ut_bot_alerts(
+#     data: pd.DataFrame,
+#     key_value: float = 1.0,
+#     atr_period: int = 10,
+#     use_heikin_ashi: bool = False,
+# ) -> pd.DataFrame:
+#     """
+#     UT Bot Alerts indicator.
 
-    Parameters
-    ----------
-    df : DataFrame with columns: open, high, low, close.
-    key_value : ATR multiplier — controls trailing stop sensitivity.
-    atr_period : ATR lookback period.
-    use_heikin_ashi : Use Heikin Ashi close as source (ATR stays on regular candles).
+#     Parameters
+#     ----------
+#     df : DataFrame with columns: open, high, low, close.
+#     key_value : ATR multiplier — controls trailing stop sensitivity.
+#     atr_period : ATR lookback period.
+#     use_heikin_ashi : Use Heikin Ashi close as source (ATR stays on regular candles).
 
-    Returns
-    -------
-    DataFrame with columns:
-        xATR, nLoss, trailing_stop, direction, buy, sell,
-        bar_buy, bar_sell, position, distance, distance_pct
-    """
-    # ── Validation ─────────────────────────────────────────────────────
-    required = ["open", "high", "low", "close"]
-    missing = [c for c in required if c not in data.columns]
-    if missing:
-        raise ValueError(f"Missing columns: {missing}")
-    if len(data) < atr_period:
-        raise ValueError(f"Need >= {atr_period} rows (atr_period), got {len(data)}")
+#     Returns
+#     -------
+#     DataFrame with columns:
+#         xATR, nLoss, trailing_stop, direction, buy, sell,
+#         bar_buy, bar_sell, position, distance, distance_pct
+#     """
+#     # ── Validation ─────────────────────────────────────────────────────
+#     required = ["open", "high", "low", "close"]
+#     missing = [c for c in required if c not in data.columns]
+#     if missing:
+#         raise ValueError(f"Missing columns: {missing}")
+#     if len(data) < atr_period:
+#         raise ValueError(f"Need >= {atr_period} rows (atr_period), got {len(data)}")
 
-    out = data.copy()
+#     out = data.copy()
 
-    # ── Source (HA close or regular close) ──────────────────────────────
-    # Pine: atr() always uses REGULAR candles; only `src` switches to HA
-    if use_heikin_ashi:
-        ha_close = (data["open"] + data["high"] + data["low"] + data["close"]) / 4
-        ha_open = np.empty(len(data))
-        ha_open[0] = (data["open"].iat[0] + data["close"].iat[0]) / 2
-        ha_close_arr = ha_close.values
-        for i in range(1, len(data)):
-            ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2
-        src = ha_close.values
-    else:
-        src = data["close"].values.copy()
+#     # ── Source (HA close or regular close) ──────────────────────────────
+#     # Pine: atr() always uses REGULAR candles; only `src` switches to HA
+#     if use_heikin_ashi:
+#         ha_close = (data["open"] + data["high"] + data["low"] + data["close"]) / 4
+#         ha_open = np.empty(len(data))
+#         ha_open[0] = (data["open"].iat[0] + data["close"].iat[0]) / 2
+#         ha_close_arr = ha_close.values
+#         for i in range(1, len(data)):
+#             ha_open[i] = (ha_open[i - 1] + ha_close_arr[i - 1]) / 2
+#         src = ha_close.values
+#     else:
+#         src = data["close"].values.copy()
 
-    # ── ATR on REGULAR candles (Pine-accurate) ─────────────────────────
-    high = data["high"].values
-    low = data["low"].values
-    close = data["close"].values
+#     # ── ATR on REGULAR candles (Pine-accurate) ─────────────────────────
+#     high = data["high"].values
+#     low = data["low"].values
+#     close = data["close"].values
 
-    prev_close = np.empty(len(data))
-    prev_close[0] = np.nan
-    prev_close[1:] = close[:-1]
+#     prev_close = np.empty(len(data))
+#     prev_close[0] = np.nan
+#     prev_close[1:] = close[:-1]
 
-    tr = np.maximum(
-        high - low,
-        np.maximum(
-            np.abs(high - prev_close),
-            np.abs(low - prev_close),
-        ),
-    )
-    tr[0] = high[0] - low[0]  # bar 0: no prev_close → TR = H-L
+#     tr = np.maximum(
+#         high - low,
+#         np.maximum(
+#             np.abs(high - prev_close),
+#             np.abs(low - prev_close),
+#         ),
+#     )
+#     tr[0] = high[0] - low[0]  # bar 0: no prev_close → TR = H-L
 
-    # RMA (Wilder's smoothing) = EWM alpha=1/period
-    atr = pd.Series(tr).ewm(alpha=1 / atr_period, adjust=False).mean().values
-    n_loss = key_value * atr
+#     # RMA (Wilder's smoothing) = EWM alpha=1/period
+#     atr = pd.Series(tr).ewm(alpha=1 / atr_period, adjust=False).mean().values
+#     n_loss = key_value * atr
 
-    # ── ATR Trailing Stop ──────────────────────────────────────────────
-    n = len(data)
-    ts = np.empty(n)
-    # Bar 0: Pine evaluates src > nz(ts[1],0) → True (price>0),
-    #         but src[1] is na → falls to 3rd branch → src - nLoss
-    ts[0] = src[0] - n_loss[0]
+#     # ── ATR Trailing Stop ──────────────────────────────────────────────
+#     n = len(data)
+#     ts = np.empty(n)
+#     # Bar 0: Pine evaluates src > nz(ts[1],0) → True (price>0),
+#     #         but src[1] is na → falls to 3rd branch → src - nLoss
+#     ts[0] = src[0] - n_loss[0]
 
-    for i in range(1, n):
-        prev = ts[i - 1]
-        s = src[i]
-        s1 = src[i - 1]
-        nl = n_loss[i]
+#     for i in range(1, n):
+#         prev = ts[i - 1]
+#         s = src[i]
+#         s1 = src[i - 1]
+#         nl = n_loss[i]
 
-        if s > prev and s1 > prev:
-            ts[i] = max(prev, s - nl)  # uptrend: ratchet up
-        elif s < prev and s1 < prev:
-            ts[i] = min(prev, s + nl)  # downtrend: ratchet down
-        elif s > prev:
-            ts[i] = s - nl  # flip to uptrend
-        else:
-            ts[i] = s + nl  # flip to downtrend
+#         if s > prev and s1 > prev:
+#             ts[i] = max(prev, s - nl)  # uptrend: ratchet up
+#         elif s < prev and s1 < prev:
+#             ts[i] = min(prev, s + nl)  # downtrend: ratchet down
+#         elif s > prev:
+#             ts[i] = s - nl  # flip to uptrend
+#         else:
+#             ts[i] = s + nl  # flip to downtrend
 
-    # ── Epsilon guard: nudge if ts == src exactly ──────────────────────
-    eps = 1e-10
-    mask = ts == src
-    if mask.any():
-        for i in np.where(mask)[0]:
-            if i > 0 and src[i - 1] > ts[i - 1]:
-                ts[i] = src[i] - eps  # keep uptrend
-            else:
-                ts[i] = src[i] + eps  # keep downtrend
+#     # ── Epsilon guard: nudge if ts == src exactly ──────────────────────
+#     eps = 1e-10
+#     mask = ts == src
+#     if mask.any():
+#         for i in np.where(mask)[0]:
+#             if i > 0 and src[i - 1] > ts[i - 1]:
+#                 ts[i] = src[i] - eps  # keep uptrend
+#             else:
+#                 ts[i] = src[i] + eps  # keep downtrend
 
-    # ── Signals ────────────────────────────────────────────────────────
-    direction = src > ts  # True = bullish
+#     # ── Signals ────────────────────────────────────────────────────────
+#     direction = src > ts  # True = bullish
 
-    # Crossover: direction flips from False→True (buy) / True→False (sell)
-    prev_dir = np.empty(n, dtype=bool)
-    prev_dir[0] = False
-    prev_dir[1:] = direction[:-1]
+#     # Crossover: direction flips from False→True (buy) / True→False (sell)
+#     prev_dir = np.empty(n, dtype=bool)
+#     prev_dir[0] = False
+#     prev_dir[1:] = direction[:-1]
 
-    buy = direction & ~prev_dir
-    sell = ~direction & prev_dir
-    bar_buy = direction  # bar coloring
-    bar_sell = ~direction
+#     buy = direction & ~prev_dir
+#     sell = ~direction & prev_dir
+#     bar_buy = direction  # bar coloring
+#     bar_sell = ~direction
 
-    # ── Position tracking ──────────────────────────────────────────────
-    pos = np.zeros(n, dtype=np.int8)
-    for i in range(n):
-        if buy[i]:
-            pos[i] = 1
-        elif sell[i]:
-            pos[i] = -1
-        elif i > 0:
-            pos[i] = pos[i - 1]
+#     # ── Position tracking ──────────────────────────────────────────────
+#     pos = np.zeros(n, dtype=np.int8)
+#     for i in range(n):
+#         if buy[i]:
+#             pos[i] = 1
+#         elif sell[i]:
+#             pos[i] = -1
+#         elif i > 0:
+#             pos[i] = pos[i - 1]
 
-    # ── Distance metrics ───────────────────────────────────────────────
-    dist = np.abs(src - ts)
-    dist_pct = np.where(src != 0, (dist / src) * 100, 0.0)
+#     # ── Distance metrics ───────────────────────────────────────────────
+#     dist = np.abs(src - ts)
+#     dist_pct = np.where(src != 0, (dist / src) * 100, 0.0)
 
-    # ── Assemble output ────────────────────────────────────────────────
-    idx = data.index
-    out["xATR"] = pd.Series(atr, index=idx)
-    out["nLoss"] = pd.Series(n_loss, index=idx)
-    out["UT_TrailingStop"] = pd.Series(ts, index=idx)
-    out["direction"] = pd.Series(direction, index=idx)
-    out["entry_buy_signal"] = pd.Series(buy, index=idx)
-    out["entry_sell_signal"] = pd.Series(sell, index=idx)
-    out["bar_buy"] = pd.Series(bar_buy, index=idx)
-    out["bar_sell"] = pd.Series(bar_sell, index=idx)
-    out["position"] = pd.Series(pos, index=idx)
-    out["distance"] = pd.Series(dist, index=idx)
-    out["distance_pct"] = pd.Series(dist_pct, index=idx)
+#     # ── Assemble output ────────────────────────────────────────────────
+#     idx = data.index
+#     out["xATR"] = pd.Series(atr, index=idx)
+#     out["nLoss"] = pd.Series(n_loss, index=idx)
+#     out["UT_TrailingStop"] = pd.Series(ts, index=idx)
+#     out["direction"] = pd.Series(direction, index=idx)
+#     out["entry_buy_signal"] = pd.Series(buy, index=idx)
+#     out["entry_sell_signal"] = pd.Series(sell, index=idx)
+#     out["bar_buy"] = pd.Series(bar_buy, index=idx)
+#     out["bar_sell"] = pd.Series(bar_sell, index=idx)
+#     out["position"] = pd.Series(pos, index=idx)
+#     out["distance"] = pd.Series(dist, index=idx)
+#     out["distance_pct"] = pd.Series(dist_pct, index=idx)
 
-    # ── NaN audit ──────────────────────────────────────────────────────
-    output_cols = [
-        "UT_TrailingStop",
-        "direction",
-        "entry_buy_signal",
-        "entry_sell_signal",
-    ]
-    nan_count = out[output_cols].isna().sum().sum()
-    if nan_count > 0:
-        warnings.warn(
-            f"Found {nan_count} NaN(s) in output — check input data quality.",
-            UserWarning,
-            stacklevel=2,
-        )
+#     # ── NaN audit ──────────────────────────────────────────────────────
+#     output_cols = [
+#         "UT_TrailingStop",
+#         "direction",
+#         "entry_buy_signal",
+#         "entry_sell_signal",
+#     ]
+#     nan_count = out[output_cols].isna().sum().sum()
+#     if nan_count > 0:
+#         warnings.warn(
+#             f"Found {nan_count} NaN(s) in output — check input data quality.",
+#             UserWarning,
+#             stacklevel=2,
+#         )
 
-    return out
+#     return out
 
 
 # Example Usage:
